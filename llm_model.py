@@ -1,19 +1,24 @@
 from llama_cpp import Llama
 
 class LlmModel:
-    def __init__(self, model_path: str, n_gpu_layers: int = -1, context_size: int = 32768):
+    def __init__(self, model_path: str, model_name: str, system_prompt: str, n_gpu_layers: int = -1, context_size: int = 32768):
         self._model = Llama(model_path=model_path, 
                             n_gpu_layers=n_gpu_layers,
                             n_ctx=context_size,
                             verbose=False,
                             chat_format='mistral-instruct')
         self._chat_history: list[dict] = []
-        self.set_system_prompt(prompt='You are a helpful assistant.')
+        self._model_name = model_name
+        self.set_system_prompt(prompt=system_prompt)
 
     @property
     def model(self) -> Llama:
         return self._model
     
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
     @property
     def chat_history(self) -> list[str]:
         return self._chat_history
