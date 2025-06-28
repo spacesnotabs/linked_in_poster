@@ -1,7 +1,7 @@
 import json
 from llm_model import LlmModel
 
-def read_model_config(config_path="model_config.json") -> dict:
+def read_model_config(config_path="config/model_config.json") -> dict:
     """Reads the model configuration from a JSON file."""
     with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)

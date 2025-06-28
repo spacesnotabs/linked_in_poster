@@ -5,7 +5,7 @@ This project has just begun so as of this writing, all it does is fire up a spec
 
 ## Model Configuration
 
-Create a `model_config.json` file in the project directory with the following structure:
+Create a `config/model_config.json` file in the project directory with the following structure:
 
 ```json
 {

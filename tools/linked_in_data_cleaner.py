@@ -4,9 +4,9 @@ Cleans data from LinkedIn files for using as LLM finetuning
 import pandas as pd
 
 # files specific to LinkedIn
-shared_csv = "data/Shares.csv"
-rich_media_csv = "data/Rich_Media.csv"
-comments_csv = "data/Comments.csv"
+shared_csv = "../data/Shares.csv"
+rich_media_csv = "../data/Rich_Media.csv"
+comments_csv = "../data/Comments.csv"
 
 def clean_csv(filename: str, cols: list | None = None) -> pd.DataFrame | None:
     ret = None
