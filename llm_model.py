@@ -2,14 +2,11 @@ from llama_cpp import Llama
 
 class LlmModel:
     def __init__(self, model_path: str, model_name: str, system_prompt: str, n_gpu_layers: int = -1, context_size: int = 32768):
-        if model_path == "DUMMY":
-            self._model = None
-        else:
-            self._model = Llama(model_path=model_path,
-                                n_gpu_layers=n_gpu_layers,
-                                n_ctx=context_size,
-                                verbose=False,
-                                chat_format='mistral-instruct')
+        self._model = Llama(model_path=model_path,
+                            n_gpu_layers=n_gpu_layers,
+                            n_ctx=context_size,
+                            verbose=False,
+                            chat_format='mistral-instruct')
         self._chat_history: list[dict] = []
         self._model_name = model_name
         self.set_system_prompt(prompt=system_prompt)
@@ -45,12 +42,6 @@ class LlmModel:
 
         user_prompt = self.create_prompt(role='user', content=prompt)
         self.chat_history.append(user_prompt)
-
-        if self.model is None:
-            text = f"This is a dummy response to your prompt: '{prompt}'"
-            assistant_prompt = self.create_prompt(role='assistant', content=text)
-            self.chat_history.append(assistant_prompt)
-            return text
 
         try:
             resp = self.model.create_chat_completion(
