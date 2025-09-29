@@ -10,22 +10,43 @@ Create a `model_config.json` file in the project directory with the following st
 ```json
 {
   "system_prompt": "You are a helpful assistant.",
-  "Mistral 7B Instruct": {
-    "model_filename": "models/mistral-7b-instruct-v0.1.Q4_K_M.gguf",
-    "api_key": null
+  "model_configs": {
+    "Mistral 7B Instruct": {
+      "model_filename": "models/mistral-7b-instruct-v0.1.Q4_K_M.gguf",
+      "api_key": null
+    }
   }
   // Add more models as needed
 }
 ```
 
 - `system_prompt`: (string) The default system prompt for all models.
+- `model_configs`: A dictionary containing configurations for different models.
 - Each model section (e.g., `"Mistral 7B Instruct"`) contains:
-  - `model_filename`: (string) Path to the model file.
+  - `model_filename`: (string) Path to the model file. Use "DUMMY" for a test model that doesn't require a real model file.
   - `api_key`: (string or null) API key if required by the model.
 
 ## Running the Application
 
-To start the application, run:
+### Web Interface (Recommended)
+
+To start the web interface, run:
+
+```sh
+python api.py
+```
+
+Then, open your web browser and navigate to `http://localhost:8000`.
+
+The web interface allows you to:
+- Select the language model.
+- Chat with the model.
+- Clear the chat history.
+- Upload a file (functionality is a work in progress).
+
+### Command-Line Interface
+
+To start the command-line application, run:
 
 ```sh
 python main.py

@@ -46,7 +46,10 @@ def main():
     if not model_filename:
         raise ValueError("Model filename not found in config.")
 
-    model_path = "models/" + model_filename.split("models/")[-1] if "models/" not in model_filename else model_filename
+    if model_filename == "DUMMY":
+        model_path = "DUMMY"
+    else:
+        model_path = "models/" + model_filename.split("models/")[-1] if "models/" not in model_filename else model_filename
     model = LlmModel(model_path=model_path, model_name=model_name, system_prompt=system_prompt)
 
     # begin the chat loop
