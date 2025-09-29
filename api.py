@@ -15,7 +15,18 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # --- Model Configuration ---
-config = read_model_config()
+try:
+    config = read_model_config()
+except FileNotFoundError:
+    config = {
+        "system_prompt": "You are a helpful assistant.",
+        "model_configs": {
+            "Dummy Model": {
+                "model_filename": "DUMMY",
+                "api_key": None
+            }
+        }
+    }
 system_prompt = config.get("system_prompt", "You are a helpful assistant.")
 models_config = config.get("model_configs")
 model_names = list(models_config.keys())
@@ -77,8 +88,15 @@ async def switch_model(request: Request):
 
 @app.post("/api/uploadfile/")
 async def create_upload_file(file: UploadFile = File(...)):
-    # This is a placeholder for now.
-    return {"filename": file.filename, "content_type": file.content_type}
+    try:
+        contents = await file.read()
+        file_content = contents.decode("utf-8")
+    except Exception as e:
+        return JSONResponse(content={"error": f"There was an error uploading the file: {e}"}, status_code=500)
+    finally:
+        await file.close()
+
+    return {"filename": file.filename, "content": file_content}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
