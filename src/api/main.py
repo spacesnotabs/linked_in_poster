@@ -61,7 +61,13 @@ from src.api.schemas import ChatRequest, ChatResponse, ModelSwitchRequest
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(chat_request: ChatRequest):
     response = llm_model.send_prompt(chat_request.prompt)
-    return ChatResponse(response=response)
+    usage = llm_model.get_last_interaction_usage()
+    chat_usage = llm_model.get_chat_usage()
+    return ChatResponse(
+        response=response or "",
+        usage=usage,
+        chat_usage=chat_usage
+    )
 
 @app.post("/api/clear")
 async def clear_history():
