@@ -79,7 +79,19 @@ async def create_upload_file(file: UploadFile = File(...)):
     finally:
         await file.close()
 
-    return {"filename": file.filename, "content": file_content}
+    llm_model.set_current_context(context=file_content)
+
+    confirmation_message = (
+        f"File '{file.filename}' uploaded successfully and added as context."
+    )
+
+    return JSONResponse(
+        {
+            "filename": file.filename,
+            "content": file_content,
+            "message": confirmation_message,
+        }
+    )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

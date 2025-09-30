@@ -144,6 +144,8 @@
             const chatContainer = document.getElementById('chat-container');
             const promptInput = document.getElementById('prompt-input');
             const sendButton = document.getElementById('send-button');
+            const uploadForm = document.getElementById('upload-form');
+            const fileInput = document.getElementById('file-input');
 
             // Fetch models and populate dropdown
             try {
@@ -185,6 +187,36 @@
                     addMessage('Chat history cleared.', 'system-message');
                 } catch (error) {
                     console.error('Error clearing history:', error);
+                }
+            });
+
+            uploadForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                if (!fileInput.files.length) {
+                    return;
+                }
+
+                const formData = new FormData(uploadForm);
+
+                try {
+                    const response = await fetch('/api/uploadfile/', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok || data.error) {
+                        const errorMessage = data?.error ?? 'Error: Could not upload the file.';
+                        addMessage(errorMessage, 'system-message');
+                    } else {
+                        const successMessage = data.message ?? `File ${data.filename} uploaded successfully.`;
+                        addMessage(successMessage, 'system-message');
+                        fileInput.value = '';
+                    }
+                } catch (error) {
+                    console.error('Error uploading file:', error);
+                    addMessage('Error: Could not upload the file.', 'system-message');
                 }
             });
 

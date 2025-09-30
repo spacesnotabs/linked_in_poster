@@ -15,6 +15,7 @@ class LlmModel:
 
         self._model_name = model_name
         self._chat_history: list[dict] = []
+        self._current_context: str = ""
 
         if model_path == "DUMMY":
             self._model = self._create_dummy_model()
@@ -60,13 +61,21 @@ class LlmModel:
         system_prompt = self.create_prompt(role='system', content=prompt)
         self.chat_history.append(system_prompt)
 
+    def set_current_context(self, context: str) -> None:
+        self._current_context = context
+
     def clear_chat_history(self) -> None:
         """Resets the chat history."""
         self._chat_history = []
 
     def create_prompt(self, role: str, content: str) -> dict:
         """Create the prompt in the expected format."""
-        prompt={'role': role, 'content': content.strip()}
+        content = content.strip()
+        if self._current_context:
+            content = f"<context>{self._current_context}</context>\n\n{content}"
+            self._current_context = ""
+
+        prompt={'role': role, 'content': content}
         return prompt
 
     def send_prompt(self, prompt: str) -> str | None:
