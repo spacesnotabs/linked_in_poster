@@ -92,6 +92,11 @@
         button:hover, input[type="submit"]:hover {
             background-color: #0056b3;
         }
+        button:disabled, input[type="submit"]:disabled {
+            background-color: #9bbef5;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
         #clear-history {
             background-color: #6c757d;
         }
@@ -102,6 +107,32 @@
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+        #status-area {
+            min-height: 24px;
+            padding: 0 20px 10px;
+        }
+        #status-indicator {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.95em;
+            color: #007bff;
+        }
+        #status-indicator.active {
+            display: inline-flex;
+        }
+        #status-indicator .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #cfe0ff;
+            border-top-color: #007bff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
         pre {
             background-color: #2d2d2d;
@@ -130,6 +161,13 @@
 
         <div id="chat-container"></div>
 
+        <div id="status-area">
+            <div id="status-indicator" role="status" aria-live="polite" aria-hidden="true">
+                <span class="spinner" aria-hidden="true"></span>
+                <span>Model is thinking...</span>
+            </div>
+        </div>
+
         <div id="input-area">
             <input type="text" id="prompt-input" placeholder="Enter your prompt...">
             <button id="send-button">Send</button>
@@ -143,6 +181,7 @@
             const chatContainer = document.getElementById('chat-container');
             const promptInput = document.getElementById('prompt-input');
             const sendButton = document.getElementById('send-button');
+            const statusIndicator = document.getElementById('status-indicator');
             const uploadForm = document.getElementById('upload-form');
             const fileInput = document.getElementById('file-input');
 
@@ -223,16 +262,33 @@
             sendButton.addEventListener('click', sendPrompt);
             promptInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
+                    e.preventDefault();
                     sendPrompt();
                 }
             });
 
+            function setLoadingState(isLoading) {
+                sendButton.disabled = isLoading;
+                if (isLoading) {
+                    statusIndicator.classList.add('active');
+                    statusIndicator.setAttribute('aria-hidden', 'false');
+                } else {
+                    statusIndicator.classList.remove('active');
+                    statusIndicator.setAttribute('aria-hidden', 'true');
+                }
+            }
+
             async function sendPrompt() {
+                if (sendButton.disabled) {
+                    return;
+                }
+
                 const prompt = promptInput.value.trim();
                 if (!prompt) return;
 
                 addMessage(prompt, 'user-message');
                 promptInput.value = '';
+                setLoadingState(true);
 
                 try {
                     const response = await fetch('/api/chat', {
@@ -245,6 +301,8 @@
                 } catch (error) {
                     console.error('Error sending prompt:', error);
                     addMessage('Error: Could not get response from server.', 'assistant-message');
+                } finally {
+                    setLoadingState(false);
                 }
             }
 
