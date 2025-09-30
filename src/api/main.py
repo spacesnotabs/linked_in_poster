@@ -46,7 +46,13 @@ async def read_root(request: Request):
 
 @app.get("/api/models", response_class=JSONResponse)
 async def get_models():
-    return {"models": MODELS_CONFIG, "selected_model": llm_model.model_name}
+    """Return available model names and the currently selected model."""
+    selected_model = llm_model.model_name if llm_model else None
+    return {
+        "models": MODEL_NAMES,
+        "models_config": MODELS_CONFIG,
+        "selected_model": selected_model
+    }
 
 from src.api.schemas import ChatRequest, ChatResponse, ModelSwitchRequest
 
