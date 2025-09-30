@@ -2,17 +2,34 @@ from llama_cpp import Llama
 
 class LlmModel:
     def __init__(self, model_path: str, model_name: str, system_prompt: str, n_gpu_layers: int = -1, context_size: int = 32768):
-        self._model = Llama(model_path=model_path,
-                            n_gpu_layers=n_gpu_layers,
-                            n_ctx=context_size,
-                            verbose=False,
-                            chat_format='mistral-instruct')
-        self._chat_history: list[dict] = []
         self._model_name = model_name
+        self._chat_history: list[dict] = []
+
+        if model_path == "DUMMY":
+            self._model = self._create_dummy_model()
+        else:
+            self._model = Llama(model_path=model_path,
+                                n_gpu_layers=n_gpu_layers,
+                                n_ctx=context_size,
+                                verbose=False,
+                                chat_format='mistral-instruct')
+
         self.set_system_prompt(prompt=system_prompt)
 
+    def _create_dummy_model(self):
+        class DummyLlama:
+            def create_chat_completion(self, messages, **kwargs):
+                return {
+                    'choices': [{
+                        'message': {
+                            'content': "This is a dummy response from a mock model."
+                        }
+                    }]
+                }
+        return DummyLlama()
+
     @property
-    def model(self) -> Llama:
+    def model(self):
         return self._model
     
     @property
