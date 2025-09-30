@@ -94,7 +94,7 @@ class LlmModel:
                                  n_ctx=_llm_config.n_context_size,
                                  n_gpu_layers=n_gpu_layers,
                                  n_threads=_llm_config.n_threads,
-                                 n_batch=_llm_config.n_threads_batch,
+                                 n_threads_batch=_llm_config.n_threads_batch,
                                  verbose=_llm_config.verbose,
                                  use_mmap=_llm_config.use_mmap,
                                  logits_all=_llm_config.logits_all)
