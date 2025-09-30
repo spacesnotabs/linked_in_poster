@@ -1,7 +1,18 @@
 from llama_cpp import Llama
+import os
 
 class LlmModel:
-    def __init__(self, model_path: str, model_name: str, system_prompt: str, n_gpu_layers: int = -1, context_size: int = 32768):
+    def __init__(self, 
+                 model_path: str, 
+                 model_name: str, 
+                 system_prompt: str, 
+                 chat_format: str,
+                 n_gpu_layers: int = -1, 
+                 context_size: int = 32768):
+
+        _n_threads = os.cpu_count()
+        _n_threads_batch = _n_threads // 2
+
         self._model_name = model_name
         self._chat_history: list[dict] = []
 
@@ -11,8 +22,13 @@ class LlmModel:
             self._model = Llama(model_path=model_path,
                                 n_gpu_layers=n_gpu_layers,
                                 n_ctx=context_size,
+                                n_batch=2048,
+                                n_threads=_n_threads,
+                                n_threads_batch=_n_threads_batch,
                                 verbose=False,
-                                chat_format='mistral-instruct')
+                                use_mmap=True,
+                                logits_all=False,
+                                chat_format=chat_format)
 
         self.set_system_prompt(prompt=system_prompt)
 

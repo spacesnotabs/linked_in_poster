@@ -6,6 +6,7 @@ DEFAULT_CONFIG = {
     "model_configs": {
         "Dummy Model": {
             "model_filename": "DUMMY",
+            "chat_format": "dummy",
             "api_key": None
         }
     }

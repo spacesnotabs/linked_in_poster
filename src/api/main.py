@@ -23,12 +23,14 @@ def initialize_model(model_name: str):
     global llm_model
     chosen_model = MODELS_CONFIG.get(model_name, {})
     model_filename = chosen_model.get("model_filename")
+    chat_format = chosen_model.get("chat_format")
     if not model_filename:
         raise ValueError("Model filename not found in config.")
 
     llm_model = LlmModel(
         model_path=model_filename,
         model_name=model_name,
+        chat_format=chat_format,
         system_prompt=SYSTEM_PROMPT
     )
 
@@ -44,7 +46,7 @@ async def read_root(request: Request):
 
 @app.get("/api/models", response_class=JSONResponse)
 async def get_models():
-    return {"models": model_names, "selected_model": llm_model.model_name}
+    return {"models": MODELS_CONFIG, "selected_model": llm_model.model_name}
 
 from src.api.schemas import ChatRequest, ChatResponse, ModelSwitchRequest
 
@@ -80,4 +82,4 @@ async def create_upload_file(file: UploadFile = File(...)):
     return {"filename": file.filename, "content": file_content}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
