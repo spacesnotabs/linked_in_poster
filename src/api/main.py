@@ -97,6 +97,7 @@ async def create_upload_file(file: UploadFile = File(...)):
         await file.close()
 
     llm_model.set_current_context(context=file_content)
+    estimated_tokens = llm_model.get_pending_context_tokens()
 
     confirmation_message = (
         f"File '{file.filename}' uploaded successfully and added as context."
@@ -107,6 +108,7 @@ async def create_upload_file(file: UploadFile = File(...)):
             "filename": file.filename,
             "content": file_content,
             "message": confirmation_message,
+            "estimated_tokens": estimated_tokens,
         }
     )
 

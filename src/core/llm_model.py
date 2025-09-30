@@ -232,6 +232,10 @@ class LlmModel:
         """Return the usage metrics for each completed prompt/response pair."""
         return [usage.to_dict() for usage in self._usage_history]
 
+    def get_pending_context_tokens(self) -> int:
+        """Return the estimated token count for the currently loaded context."""
+        return self._pending_context_tokens
+
     def _reset_usage_tracking(self) -> None:
         self._chat_usage = UsageMetrics()
         self._last_interaction_usage = UsageMetrics()

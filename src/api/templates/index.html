@@ -47,6 +47,23 @@
             max-width: 80%;
             line-height: 1.5;
         }
+        .message-content {
+            white-space: pre-wrap;
+        }
+        .message-meta {
+            margin-top: 6px;
+            font-size: 0.75em;
+            opacity: 0.85;
+        }
+        .assistant-message .message-meta {
+            color: #555;
+        }
+        .user-message .message-meta {
+            color: rgba(255, 255, 255, 0.85);
+        }
+        .system-message .message-meta {
+            color: #666;
+        }
         .user-message {
             background-color: #007bff;
             color: white;
@@ -162,6 +179,38 @@
             margin: 0 0 12px;
             font-size: 1.05em;
         }
+        #dashboard {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .dashboard-group {
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .dashboard-group-title {
+            font-weight: 600;
+            font-size: 0.95em;
+            color: #333;
+        }
+        .dashboard-metric {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9em;
+            color: #444;
+        }
+        .dashboard-label {
+            color: #555;
+        }
+        .dashboard-value {
+            font-weight: 600;
+        }
         #model-config-content {
             font-size: 1em;
         }
@@ -232,7 +281,48 @@
                 </div>
             </div>
 
-            <aside id="model-info-panel" aria-labelledby="model-info-title">
+            <aside id="model-info-panel" aria-labelledby="dashboard-title model-info-title">
+                <h2 id="dashboard-title">Dashboard</h2>
+                <div id="dashboard">
+                    <div class="dashboard-group" aria-label="Last interaction metrics">
+                        <div class="dashboard-group-title">Last Interaction</div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Prompt Tokens</span>
+                            <span class="dashboard-value" id="dashboard-last-prompt">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Context Tokens</span>
+                            <span class="dashboard-value" id="dashboard-last-context">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Completion Tokens</span>
+                            <span class="dashboard-value" id="dashboard-last-completion">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Total Tokens</span>
+                            <span class="dashboard-value" id="dashboard-last-total">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Response Time (s)</span>
+                            <span class="dashboard-value" id="dashboard-last-time">--</span>
+                        </div>
+                    </div>
+                    <div class="dashboard-group" aria-label="Session metrics">
+                        <div class="dashboard-group-title">Session</div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Context Window</span>
+                            <span class="dashboard-value" id="dashboard-context-window">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Session Tokens</span>
+                            <span class="dashboard-value" id="dashboard-session-total">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Remaining Tokens</span>
+                            <span class="dashboard-value" id="dashboard-remaining">--</span>
+                        </div>
+                    </div>
+                </div>
                 <h2 id="model-info-title">Model Configuration</h2>
                 <div id="model-config-content">
                     <p class="placeholder">Select a model to view its configuration.</p>
@@ -252,6 +342,20 @@
             const uploadForm = document.getElementById('upload-form');
             const fileInput = document.getElementById('file-input');
             const modelConfigContainer = document.getElementById('model-config-content');
+            const dashboardElements = {
+                lastPrompt: document.getElementById('dashboard-last-prompt'),
+                lastContext: document.getElementById('dashboard-last-context'),
+                lastCompletion: document.getElementById('dashboard-last-completion'),
+                lastTotal: document.getElementById('dashboard-last-total'),
+                lastTime: document.getElementById('dashboard-last-time'),
+                contextWindow: document.getElementById('dashboard-context-window'),
+                sessionTotal: document.getElementById('dashboard-session-total'),
+                remaining: document.getElementById('dashboard-remaining'),
+            };
+
+            let currentModelConfig = null;
+            let lastUsageData = null;
+            let chatUsageData = null;
 
             updateModelConfig(null);
 
@@ -290,6 +394,7 @@
                         return;
                     }
                     updateModelConfig(data.model_config);
+                    updateDashboard(null, null);
                     const confirmation = data?.message ?? ('Switched to model: ' + selectedModel);
                     addMessage(confirmation, 'system-message');
                 } catch (error) {
@@ -304,6 +409,7 @@
                     await fetch('/api/clear', { method: 'POST' });
                     chatContainer.innerHTML = '';
                     addMessage('Chat history cleared.', 'system-message');
+                    updateDashboard(null, null);
                 } catch (error) {
                     console.error('Error clearing history:', error);
                 }
@@ -330,7 +436,9 @@
                         addMessage(errorMessage, 'system-message');
                     } else {
                         const successMessage = data.message ?? `File ${data.filename} uploaded successfully.`;
-                        addMessage(successMessage, 'system-message');
+                        const estimatedTokens = typeof data.estimated_tokens === 'number' ? data.estimated_tokens : null;
+                        const tokenSuffix = estimatedTokens !== null ? ` (~${formatTokenCount(estimatedTokens)} tokens)` : '';
+                        addMessage(successMessage + tokenSuffix, 'system-message');
                         fileInput.value = '';
                     }
                 } catch (error) {
@@ -365,9 +473,11 @@
                 }
 
                 const prompt = promptInput.value.trim();
-                if (!prompt) return;
+                if (!prompt) {
+                    return;
+                }
 
-                addMessage(prompt, 'user-message');
+                const userMessageElement = addMessage(prompt, 'user-message');
                 promptInput.value = '';
                 setLoadingState(true);
 
@@ -378,22 +488,44 @@
                         body: JSON.stringify({ prompt: prompt })
                     });
                     const data = await response.json();
-                    addMessage(data.response, 'assistant-message');
+                    if (!response.ok || data.error) {
+                        const errorMessage = data?.error ?? 'Error: Could not get response from server.';
+                        const assistantError = addMessage(errorMessage, 'assistant-message');
+                        setMessageMeta(userMessageElement, '');
+                        setMessageMeta(assistantError, '');
+                        return;
+                    }
+
+                    const assistantMessageElement = addMessage(data.response ?? '', 'assistant-message');
+
+                    if (data.usage) {
+                        setMessageMeta(userMessageElement, formatUserMeta(data.usage));
+                        setMessageMeta(assistantMessageElement, formatAssistantMeta(data.usage));
+                    } else {
+                        setMessageMeta(userMessageElement, '');
+                        setMessageMeta(assistantMessageElement, '');
+                    }
+
+                    updateDashboard(data.usage, data.chat_usage);
                 } catch (error) {
                     console.error('Error sending prompt:', error);
-                    addMessage('Error: Could not get response from server.', 'assistant-message');
+                    const assistantMessageElement = addMessage('Error: Could not get response from server.', 'assistant-message');
+                    setMessageMeta(userMessageElement, '');
+                    setMessageMeta(assistantMessageElement, '');
                 } finally {
                     setLoadingState(false);
                 }
             }
 
             function updateModelConfig(config) {
+                currentModelConfig = config || null;
                 modelConfigContainer.innerHTML = '';
                 if (!config) {
                     const placeholder = document.createElement('p');
                     placeholder.className = 'placeholder';
                     placeholder.textContent = 'Select a model to view its configuration.';
                     modelConfigContainer.appendChild(placeholder);
+                    updateDashboard();
                     return;
                 }
 
@@ -407,6 +539,7 @@
                     list.appendChild(dd);
                 });
                 modelConfigContainer.appendChild(list);
+                updateDashboard();
             }
 
             function formatConfigLabel(key) {
@@ -426,13 +559,161 @@
             function addMessage(content, className) {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = 'message ' + className;
+
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content';
                 if (className === 'assistant-message') {
-                    messageDiv.innerHTML = marked.parse(content);
+                    messageContent.innerHTML = marked.parse(String(content ?? ''));
                 } else {
-                    messageDiv.textContent = content;
+                    messageContent.textContent = content ?? '';
                 }
+                messageDiv.appendChild(messageContent);
+
                 chatContainer.appendChild(messageDiv);
                 chatContainer.scrollTop = chatContainer.scrollHeight;
+                return messageDiv;
+            }
+
+            function setMessageMeta(messageElement, text) {
+                if (!messageElement) {
+                    return;
+                }
+
+                let metaElement = messageElement.querySelector('.message-meta');
+                if (!text) {
+                    if (metaElement) {
+                        metaElement.remove();
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                    }
+                    return;
+                }
+
+                if (!metaElement) {
+                    metaElement = document.createElement('div');
+                    metaElement.className = 'message-meta';
+                    messageElement.appendChild(metaElement);
+                }
+                metaElement.textContent = text;
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+
+            function formatTokenCount(value) {
+                if (value === undefined || value === null || Number.isNaN(Number(value))) {
+                    return null;
+                }
+                return Number(value).toLocaleString();
+            }
+
+            function formatDuration(seconds) {
+                if (seconds === undefined || seconds === null || Number.isNaN(Number(seconds))) {
+                    return null;
+                }
+                return Number(seconds).toFixed(2);
+            }
+
+            function formatUserMeta(usage) {
+                if (!usage || usage.prompt_tokens === undefined || usage.prompt_tokens === null) {
+                    return '';
+                }
+
+                const promptTokens = formatTokenCount(usage.prompt_tokens);
+                const contextTokens = formatTokenCount(usage.context_tokens);
+
+                if (!promptTokens) {
+                    return '';
+                }
+
+                const parts = [`Tokens: ${promptTokens}`];
+                if (contextTokens && Number(usage.context_tokens) > 0) {
+                    parts.push(`Context: ${contextTokens}`);
+                }
+                return parts.join(' · ');
+            }
+
+            function formatAssistantMeta(usage) {
+                if (!usage) {
+                    return '';
+                }
+
+                const parts = [];
+                const responseTime = formatDuration(usage.response_seconds);
+                if (responseTime) {
+                    parts.push(`Response time: ${responseTime}s`);
+                }
+
+                const completionTokens = formatTokenCount(usage.completion_tokens);
+                if (completionTokens) {
+                    parts.push(`Completion tokens: ${completionTokens}`);
+                }
+
+                const totalTokens = formatTokenCount(usage.total_tokens);
+                if (totalTokens) {
+                    parts.push(`Total tokens: ${totalTokens}`);
+                }
+
+                return parts.join(' · ');
+            }
+
+            function updateDashboard(usage, chatUsage) {
+                if (usage !== undefined) {
+                    lastUsageData = usage || null;
+                }
+                if (chatUsage !== undefined) {
+                    chatUsageData = chatUsage || null;
+                }
+
+                const usageData = lastUsageData;
+                setDashboardValue(dashboardElements.lastPrompt, usageData?.prompt_tokens);
+                setDashboardValue(dashboardElements.lastContext, usageData?.context_tokens);
+                setDashboardValue(dashboardElements.lastCompletion, usageData?.completion_tokens);
+                setDashboardValue(dashboardElements.lastTotal, usageData?.total_tokens);
+                setDashboardValue(dashboardElements.lastTime, usageData?.response_seconds, 2);
+
+                const contextWindow = extractContextWindow();
+                setDashboardValue(dashboardElements.contextWindow, contextWindow);
+
+                const sessionData = chatUsageData;
+                setDashboardValue(dashboardElements.sessionTotal, sessionData?.total_tokens);
+
+                let remainingTokens = null;
+                if (contextWindow != null) {
+                    const usedTokens = sessionData?.total_tokens != null ? Number(sessionData.total_tokens) : 0;
+                    remainingTokens = Math.max(0, Number(contextWindow) - usedTokens);
+                }
+                setDashboardValue(dashboardElements.remaining, remainingTokens);
+            }
+
+            function setDashboardValue(element, value, decimals = 0) {
+                if (!element) {
+                    return;
+                }
+                if (value === undefined || value === null || Number.isNaN(Number(value))) {
+                    element.textContent = '--';
+                    return;
+                }
+
+                const numericValue = Number(value);
+                const options = {
+                    minimumFractionDigits: decimals,
+                    maximumFractionDigits: decimals
+                };
+                element.textContent = numericValue.toLocaleString(undefined, options);
+            }
+
+            function extractContextWindow() {
+                if (!currentModelConfig) {
+                    return null;
+                }
+
+                const candidateKeys = ['n_context_size', 'context_window', 'context_size', 'n_ctx'];
+                for (const key of candidateKeys) {
+                    const value = currentModelConfig[key];
+                    if (value !== undefined && value !== null && !Number.isNaN(Number(value))) {
+                        return Number(value);
+                    }
+                }
+
+                return null;
             }
         });
     </script>
