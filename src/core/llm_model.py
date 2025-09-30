@@ -170,7 +170,7 @@ class LlmModel:
             self._pending_context_tokens = 0
         return prompt
 
-    def send_prompt(self, prompt: str) -> str | None:
+    def send_prompt(self, prompt: str, max_tokens: int = 1024) -> str | None:
         """Send the prompt to the LLM and return its response"""
         text = None
         context_tokens = self._pending_context_tokens if self._current_context else 0
@@ -183,7 +183,7 @@ class LlmModel:
             start_time = perf_counter()
             resp = self.model.create_chat_completion(
                 messages=self._chat_history,
-                max_tokens=512,
+                max_tokens=max_tokens,
                 temperature=0.7,
                 top_p=0.9,
                 top_k=50,
