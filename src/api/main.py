@@ -48,10 +48,12 @@ async def read_root(request: Request):
 async def get_models():
     """Return available model names and the currently selected model."""
     selected_model = llm_model.model_name if llm_model else None
+    current_model_config = llm_model.get_model_config() if llm_model else None
     return {
         "models": MODEL_NAMES,
         "models_config": MODELS_CONFIG,
-        "selected_model": selected_model
+        "selected_model": selected_model,
+        "current_model_config": current_model_config
     }
 
 from src.api.schemas import ChatRequest, ChatResponse, ModelSwitchRequest
@@ -73,7 +75,10 @@ async def switch_model(switch_request: ModelSwitchRequest):
         return JSONResponse({"error": "Model not found"}, status_code=404)
 
     initialize_model(model_name)
-    return JSONResponse({"message": f"Switched to model: {model_name}"})
+    return JSONResponse({
+        "message": f"Switched to model: {model_name}",
+        "model_config": llm_model.get_model_config()
+    })
 
 @app.post("/api/uploadfile/")
 async def create_upload_file(file: UploadFile = File(...)):

@@ -144,6 +144,62 @@
         code {
             font-family: "Fira Code", "Courier New", monospace;
         }
+        #main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        #model-info-panel {
+            width: clamp(220px, 28%, 300px);
+            background-color: #f8f9fc;
+            border-left: 1px solid #e0e0e0;
+            padding: 20px;
+            overflow-y: auto;
+            flex-shrink: 0;
+            font-size: 0.9em;
+        }
+        #model-info-panel h2 {
+            margin: 0 0 12px;
+            font-size: 1.05em;
+        }
+        #model-config-content {
+            font-size: 1em;
+        }
+        #model-info-panel dl {
+            margin: 0;
+        }
+        #model-info-panel dt {
+            font-weight: 600;
+            margin-top: 12px;
+            font-size: 0.95em;
+        }
+        #model-info-panel dt:first-of-type {
+            margin-top: 0;
+        }
+        #model-info-panel dd {
+            margin: 4px 0 8px;
+            color: #555;
+            word-break: break-word;
+        }
+        #model-info-panel .placeholder {
+            color: #6c757d;
+            margin: 0;
+        }
+        #chat-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        @media (max-width: 900px) {
+            #main-content {
+                flex-direction: column;
+            }
+            #model-info-panel {
+                width: 100%;
+                border-left: none;
+                border-top: 1px solid #e0e0e0;
+            }
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
@@ -159,18 +215,29 @@
             </form>
         </div>
 
-        <div id="chat-container"></div>
+        <div id="main-content">
+            <div id="chat-panel">
+                <div id="chat-container"></div>
 
-        <div id="status-area">
-            <div id="status-indicator" role="status" aria-live="polite" aria-hidden="true">
-                <span class="spinner" aria-hidden="true"></span>
-                <span>Model is thinking...</span>
+                <div id="status-area">
+                    <div id="status-indicator" role="status" aria-live="polite" aria-hidden="true">
+                        <span class="spinner" aria-hidden="true"></span>
+                        <span>Model is thinking...</span>
+                    </div>
+                </div>
+
+                <div id="input-area">
+                    <input type="text" id="prompt-input" placeholder="Enter your prompt...">
+                    <button id="send-button">Send</button>
+                </div>
             </div>
-        </div>
 
-        <div id="input-area">
-            <input type="text" id="prompt-input" placeholder="Enter your prompt...">
-            <button id="send-button">Send</button>
+            <aside id="model-info-panel" aria-labelledby="model-info-title">
+                <h2 id="model-info-title">Model Configuration</h2>
+                <div id="model-config-content">
+                    <p class="placeholder">Select a model to view its configuration.</p>
+                </div>
+            </aside>
         </div>
     </div>
 
@@ -184,6 +251,9 @@
             const statusIndicator = document.getElementById('status-indicator');
             const uploadForm = document.getElementById('upload-form');
             const fileInput = document.getElementById('file-input');
+            const modelConfigContainer = document.getElementById('model-config-content');
+
+            updateModelConfig(null);
 
             // Fetch models and populate dropdown
             try {
@@ -198,22 +268,33 @@
                 if (data.selected_model) {
                     modelSelect.value = data.selected_model;
                 }
+                updateModelConfig(data.current_model_config);
             } catch (error) {
                 console.error('Error fetching models:', error);
+                updateModelConfig(null);
             }
 
             // Switch model
             modelSelect.addEventListener('change', async () => {
                 const selectedModel = modelSelect.value;
                 try {
-                    await fetch('/api/switch_model', {
+                    const response = await fetch('/api/switch_model', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ model_name: selectedModel })
                     });
-                    addMessage('Switched to model: ' + selectedModel, 'system-message');
+                    const data = await response.json();
+                    if (!response.ok || data.error) {
+                        const errorMessage = data?.error ?? 'Error: Could not switch model.';
+                        addMessage(errorMessage, 'system-message');
+                        return;
+                    }
+                    updateModelConfig(data.model_config);
+                    const confirmation = data?.message ?? ('Switched to model: ' + selectedModel);
+                    addMessage(confirmation, 'system-message');
                 } catch (error) {
                     console.error('Error switching model:', error);
+                    addMessage('Error switching model.', 'system-message');
                 }
             });
 
@@ -304,6 +385,42 @@
                 } finally {
                     setLoadingState(false);
                 }
+            }
+
+            function updateModelConfig(config) {
+                modelConfigContainer.innerHTML = '';
+                if (!config) {
+                    const placeholder = document.createElement('p');
+                    placeholder.className = 'placeholder';
+                    placeholder.textContent = 'Select a model to view its configuration.';
+                    modelConfigContainer.appendChild(placeholder);
+                    return;
+                }
+
+                const list = document.createElement('dl');
+                Object.entries(config).forEach(([key, value]) => {
+                    const dt = document.createElement('dt');
+                    dt.textContent = formatConfigLabel(key);
+                    const dd = document.createElement('dd');
+                    dd.textContent = formatConfigValue(value);
+                    list.appendChild(dt);
+                    list.appendChild(dd);
+                });
+                modelConfigContainer.appendChild(list);
+            }
+
+            function formatConfigLabel(key) {
+                return key
+                    .split('_')
+                    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join(' ');
+            }
+
+            function formatConfigValue(value) {
+                if (typeof value === 'boolean') {
+                    return value ? 'Yes' : 'No';
+                }
+                return String(value);
             }
 
             function addMessage(content, className) {

@@ -1,5 +1,20 @@
 from llama_cpp import Llama
 import os
+from dataclasses import dataclass, asdict
+from typing import Any
+
+@dataclass
+class LLMConfig:
+    model_path: str
+    model_name: str
+    system_prompt: str
+    n_context_size: int
+    n_threads: int
+    n_threads_batch: int
+    verbose: bool
+    use_mmap: bool
+    logits_all: bool
+    chat_format: str
 
 class LlmModel:
     def __init__(self, 
@@ -9,10 +24,43 @@ class LlmModel:
                  chat_format: str,
                  n_gpu_layers: int = -1, 
                  context_size: int = 32768):
+        
+        self.initialize_model(
+            model_path=model_path,
+            model_name=model_name,
+            system_prompt=system_prompt,
+            chat_format=chat_format,
+            n_gpu_layers=n_gpu_layers,
+            context_size=context_size
+        )
 
+    def initialize_model(self, 
+                        model_path: str, 
+                        model_name: str, 
+                        system_prompt: str, 
+                        chat_format: str,
+                        n_gpu_layers: int = -1, 
+                        context_size: int = 32768):
+        """Initialize the LLM model with the given configuration."""
+        
         _n_threads = os.cpu_count()
         _n_threads_batch = _n_threads // 2
 
+        # create an LLMConfig property for initializing the model and store it
+        _llm_config: LLMConfig = LLMConfig(
+            model_path=model_path,
+            model_name=model_name,
+            system_prompt=system_prompt,
+            n_context_size=context_size,
+            n_threads=_n_threads,
+            n_threads_batch=_n_threads_batch,
+            verbose=False,
+            use_mmap=True,
+            logits_all=False,
+            chat_format=chat_format
+        )
+
+        self._llm_config = _llm_config
         self._model_name = model_name
         self._chat_history: list[dict] = []
         self._current_context: str = ""
@@ -20,17 +68,15 @@ class LlmModel:
         if model_path == "DUMMY":
             self._model = self._create_dummy_model()
         else:
-            self._model = Llama(model_path=model_path,
-                                n_gpu_layers=n_gpu_layers,
-                                n_ctx=context_size,
-                                n_batch=2048,
-                                n_threads=_n_threads,
-                                n_threads_batch=_n_threads_batch,
-                                verbose=False,
-                                use_mmap=True,
-                                logits_all=False,
-                                chat_format=chat_format)
-
+            self._model = Llama(model_path=_llm_config.model_path,
+                                 n_ctx=_llm_config.n_context_size,
+                                 n_gpu_layers=n_gpu_layers,
+                                 n_threads=_llm_config.n_threads,
+                                 n_batch=_llm_config.n_threads_batch,
+                                 verbose=_llm_config.verbose,
+                                 use_mmap=_llm_config.use_mmap,
+                                 logits_all=_llm_config.logits_all)
+                                
         self.set_system_prompt(prompt=system_prompt)
 
     def _create_dummy_model(self):
@@ -56,6 +102,10 @@ class LlmModel:
     @property
     def chat_history(self) -> list[str]:
         return self._chat_history
+
+    def get_model_config(self) -> dict[str, Any]:
+        # convert the _llm_config dataclass to a dictionary and return it
+        return asdict(self._llm_config)
 
     def set_system_prompt(self, prompt: str) -> None:
         system_prompt = self.create_prompt(role='system', content=prompt)
@@ -105,3 +155,5 @@ class LlmModel:
 
         return text
     
+
+
