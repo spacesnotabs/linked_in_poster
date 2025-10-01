@@ -1,6 +1,7 @@
 import uvicorn
 import os
 import sys
+from typing import Optional
 from fastapi import FastAPI, Request, Form, File, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -19,27 +20,28 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory="src/api/templates")
 
 # --- Global variable for the model ---
-llm_model: LlmModel = None
+llm_model: Optional[LlmModel] = None
+selected_model_name: Optional[str] = None
 
-def initialize_model(model_name: str):
+def initialize_model(model_name: str) -> LlmModel:
     """Initializes the LLM model based on the selected name."""
-    global llm_model
+    global llm_model, selected_model_name
     chosen_model = MODELS_CONFIG.get(model_name, {})
     model_filename = chosen_model.get("model_filename")
     chat_format = chosen_model.get("chat_format")
     if not model_filename:
         raise ValueError("Model filename not found in config.")
 
-    llm_model = LlmModel(
+    model_instance = LlmModel(
         model_path=model_filename,
         model_name=model_name,
         chat_format=chat_format,
         system_prompt=SYSTEM_PROMPT
     )
 
-# Initialize with the first model in the list
-if MODEL_NAMES:
-    initialize_model(MODEL_NAMES[0])
+    llm_model = model_instance
+    selected_model_name = model_instance.model_name
+    return model_instance
 
 
 # --- FastAPI Endpoints ---
@@ -50,19 +52,22 @@ async def read_root(request: Request):
 @app.get("/api/models", response_class=JSONResponse)
 async def get_models():
     """Return available model names and the currently selected model."""
-    selected_model = llm_model.model_name if llm_model else None
     current_model_config = llm_model.get_model_config() if llm_model else None
     return {
         "models": MODEL_NAMES,
         "models_config": MODELS_CONFIG,
-        "selected_model": selected_model,
-        "current_model_config": current_model_config
+        "selected_model": selected_model_name,
+        "current_model_config": current_model_config,
+        "is_model_loaded": llm_model is not None
     }
 
 from src.api.schemas import ChatRequest, ChatResponse, ModelSwitchRequest
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(chat_request: ChatRequest):
+    if llm_model is None:
+        return JSONResponse({"error": "No model loaded."}, status_code=400)
+
     response = llm_model.send_prompt(chat_request.prompt)
     usage = llm_model.get_last_interaction_usage()
     chat_usage = llm_model.get_chat_usage()
@@ -74,23 +79,43 @@ async def chat(chat_request: ChatRequest):
 
 @app.post("/api/clear")
 async def clear_history():
+    if llm_model is None:
+        return JSONResponse({"error": "No model loaded."}, status_code=400)
+
     llm_model.clear_chat_history()
     return JSONResponse({"message": "Chat history cleared"})
 
-@app.post("/api/switch_model")
-async def switch_model(switch_request: ModelSwitchRequest):
-    model_name = switch_request.model_name
+def _load_model(model_name: str) -> JSONResponse:
     if model_name not in MODEL_NAMES:
         return JSONResponse({"error": "Model not found"}, status_code=404)
+    try:
+        model_instance = initialize_model(model_name)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"error": f"Failed to load model: {exc}"}, status_code=500)
 
-    initialize_model(model_name)
     return JSONResponse({
-        "message": f"Switched to model: {model_name}",
-        "model_config": llm_model.get_model_config()
+        "message": f"Loaded model: {model_instance.model_name}",
+        "model_config": model_instance.get_model_config(),
+        "session_cleared": True
     })
+
+
+@app.post("/api/load_model")
+async def load_model(switch_request: ModelSwitchRequest):
+    return _load_model(switch_request.model_name)
+
+
+@app.post("/api/switch_model")
+async def switch_model(switch_request: ModelSwitchRequest):
+    return _load_model(switch_request.model_name)
 
 @app.post("/api/uploadfile/")
 async def create_upload_file(file: UploadFile = File(...)):
+    if llm_model is None:
+        return JSONResponse({"error": "No model loaded."}, status_code=400)
+
     try:
         contents = await file.read()
         file_content = contents.decode("utf-8")

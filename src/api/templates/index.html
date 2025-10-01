@@ -13,7 +13,8 @@
         <div id="header">
             <label for="model-select">Model:</label>
             <select id="model-select"></select>
-            <button id="clear-history">Clear History</button>
+            <button id="load-model-button" type="button">Load Model</button>
+            <button id="clear-history" type="button">Clear History</button>
             <form id="upload-form" action="/api/uploadfile/" method="post" enctype="multipart/form-data">
                 <input type="file" name="file" id="file-input">
                 <input type="submit" value="Upload">
@@ -25,9 +26,9 @@
                 <div id="chat-container"></div>
 
                 <div id="status-area">
-                    <div id="status-indicator" role="status" aria-live="polite" aria-hidden="true">
-                        <span class="spinner" aria-hidden="true"></span>
-                        <span>Model is thinking...</span>
+                    <div id="status-indicator" class="active" role="status" aria-live="polite" aria-hidden="false">
+                        <span class="spinner hidden" aria-hidden="true"></span>
+                        <span id="status-text">No model loaded.</span>
                     </div>
                 </div>
 
@@ -97,7 +98,10 @@
             const chatContainer = document.getElementById('chat-container');
             const promptInput = document.getElementById('prompt-input');
             const sendButton = document.getElementById('send-button');
+            const loadModelButton = document.getElementById('load-model-button');
             const statusIndicator = document.getElementById('status-indicator');
+            const statusText = document.getElementById('status-text');
+            const statusSpinner = statusIndicator ? statusIndicator.querySelector('.spinner') : null;
             const uploadForm = document.getElementById('upload-form');
             const fileInput = document.getElementById('file-input');
             const modelConfigContainer = document.getElementById('model-config-content');
@@ -115,67 +119,200 @@
             let currentModelConfig = null;
             let lastUsageData = null;
             let chatUsageData = null;
+            let isModelLoaded = false;
+            let isModelLoading = false;
+            let isChatLoading = false;
+            let currentLoadedModel = null;
+            let loadedModelConfig = null;
+            let availableModelConfigs = {};
+            let pendingModelName = null;
+            let statusMessageOverride = null;
+            let statusMessageTimeoutId = null;
 
             updateModelConfig(null);
+            updateDefaultStatus();
+            updateControlsState();
 
             // Fetch models and populate dropdown
             try {
                 const response = await fetch('/api/models');
                 const data = await response.json();
-                data.models.forEach(model => {
+                const models = Array.isArray(data.models) ? data.models : [];
+                availableModelConfigs = data.models_config || {};
+                models.forEach(model => {
                     const option = document.createElement('option');
                     option.value = model;
                     option.textContent = model;
                     modelSelect.appendChild(option);
                 });
-                if (data.selected_model) {
-                    modelSelect.value = data.selected_model;
+                const initialSelection = data.selected_model || (models.length > 0 ? models[0] : '');
+                if (initialSelection) {
+                    modelSelect.value = initialSelection;
                 }
-                updateModelConfig(data.current_model_config);
+                isModelLoaded = Boolean(data.is_model_loaded);
+                loadedModelConfig = data.current_model_config || null;
+                currentLoadedModel = isModelLoaded && loadedModelConfig ? (loadedModelConfig.model_name || initialSelection) : (isModelLoaded ? initialSelection : null);
+                statusMessageOverride = null;
+                if (statusMessageTimeoutId) {
+                    clearTimeout(statusMessageTimeoutId);
+                    statusMessageTimeoutId = null;
+                }
+                pendingModelName = null;
+
+                if (isModelLoaded && loadedModelConfig) {
+                    updateModelConfig(loadedModelConfig);
+                } else if (initialSelection) {
+                    const previewConfig = buildModelPreview(initialSelection);
+                    updateModelConfig(previewConfig);
+                } else {
+                    updateModelConfig(null);
+                }
+
+                updateDefaultStatus();
+                updateControlsState();
             } catch (error) {
                 console.error('Error fetching models:', error);
+                availableModelConfigs = {};
+                isModelLoaded = false;
+                isModelLoading = false;
+                isChatLoading = false;
+                loadedModelConfig = null;
+                currentLoadedModel = null;
+                pendingModelName = null;
+                if (statusMessageTimeoutId) {
+                    clearTimeout(statusMessageTimeoutId);
+                    statusMessageTimeoutId = null;
+                }
+                statusMessageOverride = null;
                 updateModelConfig(null);
+                updateDefaultStatus();
+                updateControlsState();
             }
 
-            // Switch model
-            modelSelect.addEventListener('change', async () => {
+            // Selection change preview
+            modelSelect.addEventListener('change', () => {
                 const selectedModel = modelSelect.value;
+                if (!selectedModel) {
+                    updateModelConfig(null);
+                    clearStatusOverride();
+                    updateDefaultStatus();
+                    return;
+                }
+
+                if (loadedModelConfig && (loadedModelConfig.model_name === selectedModel || currentLoadedModel === selectedModel)) {
+                    clearStatusOverride();
+                    updateModelConfig(loadedModelConfig);
+                    updateDefaultStatus();
+                    return;
+                }
+
+                const previewConfig = buildModelPreview(selectedModel);
+                updateModelConfig(previewConfig);
+                if (!isModelLoading) {
+                    setStatusOverride('Model not loaded. Click "Load Model" to initialize.');
+                }
+                updateControlsState();
+            });
+
+            loadModelButton.addEventListener('click', async () => {
+                if (isModelLoading) {
+                    return;
+                }
+
+                const selectedModel = modelSelect.value;
+                if (!selectedModel) {
+                    setStatusOverride('Select a model before loading.', { temporary: true });
+                    return;
+                }
+
+                isModelLoading = true;
+                pendingModelName = selectedModel;
+                clearStatusOverride();
+                updateControlsState();
+                updateDefaultStatus();
+
                 try {
-                    const response = await fetch('/api/switch_model', {
+                    const response = await fetch('/api/load_model', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ model_name: selectedModel })
                     });
                     const data = await response.json();
                     if (!response.ok || data.error) {
-                        const errorMessage = data?.error ?? 'Error: Could not switch model.';
+                        const errorMessage = data?.error ?? 'Error: Could not load model.';
                         addMessage(errorMessage, 'system-message');
+                        setStatusOverride(errorMessage, { temporary: true });
                         return;
                     }
-                    updateModelConfig(data.model_config);
+
+                    isModelLoaded = true;
+                    currentLoadedModel = data.model_config?.model_name || selectedModel;
+                    loadedModelConfig = data.model_config || null;
+                    updateModelConfig(loadedModelConfig);
+                    chatContainer.innerHTML = '';
+                    promptInput.value = '';
+                    lastUsageData = null;
+                    chatUsageData = null;
                     updateDashboard(null, null);
-                    const confirmation = data?.message ?? ('Switched to model: ' + selectedModel);
-                    addMessage(confirmation, 'system-message');
+
+                    const confirmation = data?.message ?? `Loaded model: ${currentLoadedModel}`;
+                    const sessionClearedSuffix = data.session_cleared ? ' Previous chat session cleared.' : '';
+                    addMessage(confirmation + sessionClearedSuffix, 'system-message');
+                    clearStatusOverride();
                 } catch (error) {
-                    console.error('Error switching model:', error);
-                    addMessage('Error switching model.', 'system-message');
+                    console.error('Error loading model:', error);
+                    addMessage('Error: Could not load model.', 'system-message');
+                    setStatusOverride('Error: Could not load model.', { temporary: true });
+                } finally {
+                    isModelLoading = false;
+                    pendingModelName = null;
+                    updateControlsState();
+                    updateDefaultStatus();
                 }
             });
 
             // Clear history
             clearButton.addEventListener('click', async () => {
+                if (!isModelLoaded || isModelLoading) {
+                    setStatusOverride('Load a model before clearing history.', { temporary: true });
+                    return;
+                }
                 try {
-                    await fetch('/api/clear', { method: 'POST' });
+                    const response = await fetch('/api/clear', { method: 'POST' });
+                    const data = await response.json();
+                    if (!response.ok || data.error) {
+                        const errorMessage = data?.error ?? 'Error clearing history.';
+                        addMessage(errorMessage, 'system-message');
+                        if ((errorMessage || '').toLowerCase().includes('no model loaded')) {
+                            isModelLoaded = false;
+                            loadedModelConfig = null;
+                            currentLoadedModel = null;
+                        }
+                        setStatusOverride(errorMessage, { temporary: true });
+                        updateControlsState();
+                        updateDefaultStatus();
+                        return;
+                    }
                     chatContainer.innerHTML = '';
-                    addMessage('Chat history cleared.', 'system-message');
+                    addMessage(data?.message ?? 'Chat history cleared.', 'system-message');
                     updateDashboard(null, null);
+                    clearStatusOverride();
+                    updateControlsState();
+                    updateDefaultStatus();
                 } catch (error) {
                     console.error('Error clearing history:', error);
+                    setStatusOverride('Error clearing history.', { temporary: true });
+                    updateControlsState();
+                    updateDefaultStatus();
                 }
             });
 
             uploadForm.addEventListener('submit', async (event) => {
                 event.preventDefault();
+                if (!isModelLoaded || isModelLoading) {
+                    setStatusOverride('Load a model before uploading context.', { temporary: true });
+                    return;
+                }
                 if (!fileInput.files.length) {
                     return;
                 }
@@ -193,16 +330,30 @@
                     if (!response.ok || data.error) {
                         const errorMessage = data?.error ?? 'Error: Could not upload the file.';
                         addMessage(errorMessage, 'system-message');
+                        if ((errorMessage || '').toLowerCase().includes('no model loaded')) {
+                            isModelLoaded = false;
+                            loadedModelConfig = null;
+                            currentLoadedModel = null;
+                        }
+                        setStatusOverride(errorMessage, { temporary: true });
+                        updateControlsState();
+                        updateDefaultStatus();
                     } else {
                         const successMessage = data.message ?? `File ${data.filename} uploaded successfully.`;
                         const estimatedTokens = typeof data.estimated_tokens === 'number' ? data.estimated_tokens : null;
                         const tokenSuffix = estimatedTokens !== null ? ` (~${formatTokenCount(estimatedTokens)} tokens)` : '';
                         addMessage(successMessage + tokenSuffix, 'system-message');
                         fileInput.value = '';
+                        clearStatusOverride();
+                        updateControlsState();
+                        updateDefaultStatus();
                     }
                 } catch (error) {
                     console.error('Error uploading file:', error);
                     addMessage('Error: Could not upload the file.', 'system-message');
+                    setStatusOverride('Error: Could not upload the file.', { temporary: true });
+                    updateControlsState();
+                    updateDefaultStatus();
                 }
             });
 
@@ -215,9 +366,18 @@
                 }
             });
 
-            function setLoadingState(isLoading) {
-                sendButton.disabled = isLoading;
-                if (isLoading) {
+            function renderStatus(message, { showSpinner = false, active = true } = {}) {
+                if (statusText) {
+                    statusText.textContent = message || '';
+                }
+                if (statusSpinner) {
+                    statusSpinner.classList.toggle('hidden', !showSpinner);
+                }
+                if (!statusIndicator) {
+                    return;
+                }
+                const shouldShow = active && (!!message || showSpinner);
+                if (shouldShow) {
                     statusIndicator.classList.add('active');
                     statusIndicator.setAttribute('aria-hidden', 'false');
                 } else {
@@ -226,8 +386,96 @@
                 }
             }
 
+            function setStatusOverride(message, options = {}) {
+                if (message == null) {
+                    clearStatusOverride();
+                    return;
+                }
+                if (statusMessageTimeoutId) {
+                    clearTimeout(statusMessageTimeoutId);
+                    statusMessageTimeoutId = null;
+                }
+                statusMessageOverride = message;
+                updateDefaultStatus();
+                if (options.temporary) {
+                    const duration = typeof options.duration === 'number' ? options.duration : 4000;
+                    statusMessageTimeoutId = window.setTimeout(() => {
+                        statusMessageTimeoutId = null;
+                        statusMessageOverride = null;
+                        updateDefaultStatus();
+                    }, duration);
+                }
+            }
+
+            function clearStatusOverride() {
+                if (statusMessageTimeoutId) {
+                    clearTimeout(statusMessageTimeoutId);
+                    statusMessageTimeoutId = null;
+                }
+                if (statusMessageOverride !== null) {
+                    statusMessageOverride = null;
+                    updateDefaultStatus();
+                }
+            }
+
+            function updateDefaultStatus() {
+                if (statusMessageOverride !== null) {
+                    renderStatus(statusMessageOverride, { showSpinner: false, active: true });
+                    return;
+                }
+                if (isModelLoading) {
+                    const suffix = pendingModelName ? `: ${pendingModelName}` : '';
+                    renderStatus(`Loading model${suffix}...`, { showSpinner: true, active: true });
+                    return;
+                }
+                if (isChatLoading) {
+                    renderStatus('Model is thinking...', { showSpinner: true, active: true });
+                    return;
+                }
+                if (!isModelLoaded) {
+                    renderStatus('No model loaded.', { showSpinner: false, active: true });
+                    return;
+                }
+                renderStatus('', { showSpinner: false, active: false });
+            }
+
+            function updateControlsState() {
+                const canSend = isModelLoaded && !isModelLoading && !isChatLoading;
+                if (sendButton) {
+                    sendButton.disabled = !canSend;
+                }
+                if (loadModelButton) {
+                    loadModelButton.disabled = isModelLoading;
+                }
+            }
+
+            function buildModelPreview(modelName) {
+                if (!modelName) {
+                    return null;
+                }
+                const hasConfig = availableModelConfigs && Object.prototype.hasOwnProperty.call(availableModelConfigs, modelName);
+                if (!hasConfig) {
+                    return null;
+                }
+                const config = availableModelConfigs[modelName];
+                return {
+                    model_name: modelName,
+                    ...config
+                };
+            }
+
+            function setLoadingState(isLoading) {
+                isChatLoading = isLoading;
+                updateControlsState();
+                updateDefaultStatus();
+            }
+
             async function sendPrompt() {
                 if (sendButton.disabled) {
+                    return;
+                }
+                if (!isModelLoaded || isModelLoading) {
+                    updateDefaultStatus();
                     return;
                 }
 
@@ -236,6 +484,7 @@
                     return;
                 }
 
+                clearStatusOverride();
                 const userMessageElement = addMessage(prompt, 'user-message');
                 promptInput.value = '';
                 setLoadingState(true);
@@ -252,6 +501,14 @@
                         const assistantError = addMessage(errorMessage, 'assistant-message');
                         setMessageMeta(userMessageElement, '');
                         setMessageMeta(assistantError, '');
+                        if ((errorMessage || '').toLowerCase().includes('no model loaded')) {
+                            isModelLoaded = false;
+                            loadedModelConfig = null;
+                            currentLoadedModel = null;
+                        }
+                        setStatusOverride(errorMessage, { temporary: true });
+                        updateControlsState();
+                        updateDefaultStatus();
                         return;
                     }
 
@@ -266,11 +523,13 @@
                     }
 
                     updateDashboard(data.usage, data.chat_usage);
+                    clearStatusOverride();
                 } catch (error) {
                     console.error('Error sending prompt:', error);
                     const assistantMessageElement = addMessage('Error: Could not get response from server.', 'assistant-message');
                     setMessageMeta(userMessageElement, '');
                     setMessageMeta(assistantMessageElement, '');
+                    setStatusOverride('Error: Could not get response from server.', { temporary: true });
                 } finally {
                     setLoadingState(false);
                 }
