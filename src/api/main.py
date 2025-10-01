@@ -1,6 +1,8 @@
 import uvicorn
 import os
 import sys
+import tempfile
+from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, Request, Form, File, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -12,6 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 
 from src.core.llm_model import LlmModel
 from src.config import SYSTEM_PROMPT, MODELS_CONFIG, MODEL_NAMES
+from src.utils.utils import read_file
 
 # --- FastAPI App Initialization ---
 app = FastAPI()
@@ -23,12 +26,39 @@ templates = Jinja2Templates(directory="src/api/templates")
 llm_model: Optional[LlmModel] = None
 selected_model_name: Optional[str] = None
 
+TEXT_EXTENSIONS = {
+    '.txt',
+    '.md',
+    '.markdown',
+    '.csv',
+    '.tsv',
+    '.json',
+    '.yaml',
+    '.yml',
+    '.log',
+    '.ini',
+    '.cfg',
+    '.py',
+    '.js',
+    '.ts',
+    '.html',
+    '.css',
+    '.xml',
+    '.tex',
+    '.pdf',
+}
+ADDITIONAL_TEXT_MIME_TYPES = {'application/json'}
+PDF_EXTENSION = '.pdf'
+PDF_MIME_TYPES = {'application/pdf'}
+TEXT_MIME_PREFIX = 'text/'
+
 def initialize_model(model_name: str) -> LlmModel:
     """Initializes the LLM model based on the selected name."""
     global llm_model, selected_model_name
     chosen_model = MODELS_CONFIG.get(model_name, {})
     model_filename = chosen_model.get("model_filename")
     chat_format = chosen_model.get("chat_format")
+    context_size = chosen_model.get("context_window", 8192)  # Default context window size
     if not model_filename:
         raise ValueError("Model filename not found in config.")
 
@@ -36,6 +66,7 @@ def initialize_model(model_name: str) -> LlmModel:
         model_path=model_filename,
         model_name=model_name,
         chat_format=chat_format,
+        context_size=context_size,
         system_prompt=SYSTEM_PROMPT
     )
 
@@ -116,13 +147,45 @@ async def create_upload_file(file: UploadFile = File(...)):
     if llm_model is None:
         return JSONResponse({"error": "No model loaded."}, status_code=400)
 
+    filename = file.filename or ""
+    content_type = (file.content_type or "").lower()
+    suffix = Path(filename).suffix.lower()
+
+    is_pdf = suffix == PDF_EXTENSION or content_type in PDF_MIME_TYPES
+    is_text = content_type.startswith(TEXT_MIME_PREFIX) or content_type in ADDITIONAL_TEXT_MIME_TYPES or suffix in TEXT_EXTENSIONS
+
+    if not filename or not (is_pdf or is_text):
+        await file.close()
+        return JSONResponse(
+            {"error": "Only text or PDF files can be uploaded."},
+            status_code=400,
+        )
+
+    temp_path = None
     try:
-        contents = await file.read()
-        file_content = contents.decode("utf-8")
-    except Exception as e:
-        return JSONResponse(content={"error": f"There was an error uploading the file: {e}"}, status_code=500)
+        data = await file.read()
+        if not data:
+            raise ValueError("Uploaded file is empty.")
+
+        fd, temp_path = tempfile.mkstemp(suffix=suffix if suffix else "")
+        with os.fdopen(fd, "wb") as temp_file:
+            temp_file.write(data)
+
+        file_content = read_file(temp_path)
+    except (UnicodeDecodeError, ValueError) as exc:
+        return JSONResponse(
+            {"error": f"Could not read file: {exc}"},
+            status_code=400,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"There was an error uploading the file: {exc}"},
+            status_code=500,
+        )
     finally:
         await file.close()
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
     llm_model.set_current_context(context=file_content)
     estimated_tokens = llm_model.get_pending_context_tokens()

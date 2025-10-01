@@ -7,6 +7,7 @@ DEFAULT_CONFIG = {
         "Dummy Model": {
             "model_filename": "DUMMY",
             "chat_format": "dummy",
+            "context_window": 2048,
             "api_key": None
         }
     }

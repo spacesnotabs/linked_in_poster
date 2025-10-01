@@ -29,6 +29,7 @@ class LLMConfig:
     model_path: str
     model_name: str
     system_prompt: str
+    context_size: int
     n_context_size: int
     n_threads: int
     n_threads_batch: int
@@ -72,6 +73,7 @@ class LlmModel:
             model_path=model_path,
             model_name=model_name,
             system_prompt=system_prompt,
+            context_size=context_size,
             n_context_size=context_size,
             n_threads=_n_threads,
             n_threads_batch=_n_threads_batch,
