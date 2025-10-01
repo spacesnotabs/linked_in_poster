@@ -4,6 +4,7 @@ import sys
 from fastapi import FastAPI, Request, Form, File, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 
 # Add project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -13,6 +14,8 @@ from src.config import SYSTEM_PROMPT, MODELS_CONFIG, MODEL_NAMES
 
 # --- FastAPI App Initialization ---
 app = FastAPI()
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory="src/api/templates")
 
 # --- Global variable for the model ---
