@@ -202,6 +202,9 @@
         .dashboard-metric {
             display: flex;
             justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 4px 12px;
             font-size: 0.9em;
             color: #444;
         }
@@ -210,25 +213,29 @@
         }
         .dashboard-value {
             font-weight: 600;
+            text-align: right;
+            word-break: break-word;
+            white-space: pre-wrap;
         }
         #model-config-content {
             font-size: 1em;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
         }
-        #model-info-panel dl {
-            margin: 0;
+        .config-metric {
+            align-items: flex-start;
         }
-        #model-info-panel dt {
-            font-weight: 600;
-            margin-top: 12px;
-            font-size: 0.95em;
+        .config-metric .dashboard-label,
+        .config-metric .dashboard-value {
+            flex: 1 1 100%;
         }
-        #model-info-panel dt:first-of-type {
-            margin-top: 0;
+        .config-metric .dashboard-label {
+            color: #333;
         }
-        #model-info-panel dd {
-            margin: 4px 0 8px;
-            color: #555;
-            word-break: break-word;
+        .config-metric .dashboard-value {
+            text-align: left;
+            color: #333;
         }
         #model-info-panel .placeholder {
             color: #6c757d;
@@ -325,7 +332,10 @@
                 </div>
                 <h2 id="model-info-title">Model Configuration</h2>
                 <div id="model-config-content">
-                    <p class="placeholder">Select a model to view its configuration.</p>
+                    <div class="dashboard-group config-group">
+                        <div class="dashboard-group-title">Model Parameters</div>
+                        <p class="placeholder">Select a model to view its configuration.</p>
+                    </div>
                 </div>
             </aside>
         </div>
@@ -521,24 +531,77 @@
                 currentModelConfig = config || null;
                 modelConfigContainer.innerHTML = '';
                 if (!config) {
+                    const group = document.createElement('div');
+                    group.className = 'dashboard-group config-group';
+                    const title = document.createElement('div');
+                    title.className = 'dashboard-group-title';
+                    title.textContent = 'Model Parameters';
+                    group.appendChild(title);
+
                     const placeholder = document.createElement('p');
                     placeholder.className = 'placeholder';
                     placeholder.textContent = 'Select a model to view its configuration.';
-                    modelConfigContainer.appendChild(placeholder);
+                    group.appendChild(placeholder);
+
+                    modelConfigContainer.appendChild(group);
                     updateDashboard();
                     return;
                 }
 
-                const list = document.createElement('dl');
-                Object.entries(config).forEach(([key, value]) => {
-                    const dt = document.createElement('dt');
-                    dt.textContent = formatConfigLabel(key);
-                    const dd = document.createElement('dd');
-                    dd.textContent = formatConfigValue(value);
-                    list.appendChild(dt);
-                    list.appendChild(dd);
+                const group = document.createElement('div');
+                group.className = 'dashboard-group config-group';
+                const title = document.createElement('div');
+                title.className = 'dashboard-group-title';
+                title.textContent = 'Model Parameters';
+                group.appendChild(title);
+
+                const prioritizedKeys = [
+                    'model_name',
+                    'model_path',
+                    'chat_format',
+                    'system_prompt',
+                    'n_context_size',
+                    'n_threads',
+                    'n_threads_batch',
+                    'verbose',
+                    'use_mmap',
+                    'logits_all'
+                ];
+
+                const seen = new Set();
+                const orderedEntries = [];
+
+                prioritizedKeys.forEach((key) => {
+                    if (key in config) {
+                        orderedEntries.push([key, config[key]]);
+                        seen.add(key);
+                    }
                 });
-                modelConfigContainer.appendChild(list);
+
+                Object.entries(config).forEach(([key, value]) => {
+                    if (!seen.has(key)) {
+                        orderedEntries.push([key, value]);
+                    }
+                });
+
+                orderedEntries.forEach(([key, value]) => {
+                    const metric = document.createElement('div');
+                    metric.className = 'dashboard-metric config-metric';
+
+                    const label = document.createElement('span');
+                    label.className = 'dashboard-label';
+                    label.textContent = formatConfigLabel(key);
+
+                    const metricValue = document.createElement('span');
+                    metricValue.className = 'dashboard-value';
+                    metricValue.textContent = formatConfigValue(value);
+
+                    metric.appendChild(label);
+                    metric.appendChild(metricValue);
+                    group.appendChild(metric);
+                });
+
+                modelConfigContainer.appendChild(group);
                 updateDashboard();
             }
 
