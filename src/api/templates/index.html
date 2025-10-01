@@ -33,7 +33,7 @@
                 </div>
 
                 <div id="input-area">
-                    <input type="text" id="prompt-input" placeholder="Enter your prompt...">
+                    <textarea id="prompt-input" placeholder="Enter your prompt..."></textarea>
                     <button id="send-button">Send</button>
                 </div>
             </div>
@@ -359,8 +359,8 @@
 
             // Send prompt
             sendButton.addEventListener('click', sendPrompt);
-            promptInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
+            promptInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
                     e.preventDefault();
                     sendPrompt();
                 }
@@ -790,3 +790,4 @@
     </script>
 </body>
 </html>
+

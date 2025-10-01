@@ -93,6 +93,7 @@ body {
     padding: 20px;
     border-top: 1px solid #e0e0e0;
     gap: 10px;
+    align-items: flex-start;
 }
 
 #prompt-input,
@@ -306,4 +307,14 @@ code {
         border-left: none;
         border-top: 1px solid #e0e0e0;
     }
+}
+
+#prompt-input {
+    min-height: 140px;
+    max-height: 320px;
+    resize: vertical;
+    line-height: 1.4;
+    font-family: inherit;
+    overflow-wrap: anywhere;
+    overflow-y: auto;
 }
