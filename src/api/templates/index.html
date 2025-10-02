@@ -10,15 +10,22 @@
 </head>
 <body>
     <div id="app-container">
-        <div id="header">
-            <label for="model-select">Model:</label>
-            <select id="model-select"></select>
-            <button id="load-model-button" type="button">Load Model</button>
-            <button id="clear-history" type="button">Clear History</button>
-            <form id="upload-form" action="/api/uploadfile/" method="post" enctype="multipart/form-data">
-                <input type="file" name="file" id="file-input" accept=".txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.log,.ini,.cfg,.py,.js,.ts,.html,.css,.xml,.tex,.pdf,text/plain,application/pdf,text/*">
-                <input type="submit" value="Upload">
-            </form>
+        <div id="side-menu">
+            <div class="menu-group">
+                <label for="model-select">Model:</label>
+                <select id="model-select"></select>
+                <button id="load-model-button" type="button">Load Model</button>
+            </div>
+            <div class="menu-group">
+                <form id="upload-form" action="/api/uploadfile/" method="post" enctype="multipart/form-data">
+                    <label for="file-input">Upload Context:</label>
+                    <input type="file" name="file" id="file-input" accept=".txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.log,.ini,.cfg,.py,.js,.ts,.html,.css,.xml,.tex,.pdf,text/plain,application/pdf,text/*">
+                    <input type="submit" value="Upload">
+                </form>
+            </div>
+            <div class="menu-group">
+                <button id="clear-history" type="button">Clear History</button>
+            </div>
         </div>
 
         <div id="main-content">
