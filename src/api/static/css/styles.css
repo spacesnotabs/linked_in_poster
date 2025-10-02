@@ -13,20 +13,51 @@ body {
     height: 100%;
     margin: 0 auto;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     background: #fff;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     overflow: hidden;
 }
 
-#header {
-    padding: 15px 20px;
-    border-bottom: 1px solid #e0e0e0;
-    background-color: #f7f7f7;
+#side-menu {
+    width: clamp(220px, 22%, 280px);
+    padding: 20px;
+    border-right: 1px solid #e0e0e0;
+    background-color: #f8f9fc;
     display: flex;
-    align-items: center;
-    gap: 15px;
+    flex-direction: column;
+    gap: 25px;
+    overflow-y: auto;
+}
+
+.menu-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#side-menu label {
+    font-weight: 600;
+    font-size: 0.9em;
+    color: #333;
+}
+
+#side-menu select,
+#side-menu button,
+#side-menu input[type="submit"] {
+    width: 100%;
+}
+
+#side-menu input[type="file"] {
+    width: 100%;
+    font-size: 0.9em;
+}
+
+#upload-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
 #chat-container {
@@ -137,12 +168,6 @@ input[type="submit"]:disabled {
 
 #clear-history:hover {
     background-color: #5a6268;
-}
-
-#upload-form {
-    display: flex;
-    align-items: center;
-    gap: 10px;
 }
 
 #status-area {
@@ -298,6 +323,49 @@ code {
 }
 
 @media (max-width: 900px) {
+    #app-container {
+        flex-direction: column;
+    }
+
+    #side-menu {
+        width: 100%;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid #e0e0e0;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .menu-group {
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+        flex-grow: 1;
+    }
+
+    #side-menu label {
+        white-space: nowrap;
+    }
+
+    #side-menu select,
+    #side-menu button,
+    #side-menu input[type="submit"] {
+        width: auto;
+        flex-grow: 1;
+    }
+
+    #side-menu input[type="file"] {
+        width: auto;
+    }
+
+    #upload-form {
+        flex-direction: row;
+        flex-grow: 1;
+        gap: 10px;
+    }
+
     #main-content {
         flex-direction: column;
     }
