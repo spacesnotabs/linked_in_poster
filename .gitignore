@@ -1,1 +1,17 @@
-data/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Log files
+*.log
+
+# Configuration files (generated automatically)
+model_config.json
+
+# Environment
+.env
+.venv
+venv/
+env/

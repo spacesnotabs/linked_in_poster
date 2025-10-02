@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with LLM</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div id="app-container">
+        <div id="header">
+            <label for="model-select">Model:</label>
+            <select id="model-select"></select>
+            <button id="load-model-button" type="button">Load Model</button>
+            <button id="clear-history" type="button">Clear History</button>
+            <form id="upload-form" action="/api/uploadfile/" method="post" enctype="multipart/form-data">
+                <input type="file" name="file" id="file-input" accept=".txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.log,.ini,.cfg,.py,.js,.ts,.html,.css,.xml,.tex,.pdf,text/plain,application/pdf,text/*">
+                <input type="submit" value="Upload">
+            </form>
+        </div>
+
+        <div id="main-content">
+            <div id="chat-panel">
+                <div id="chat-container"></div>
+
+                <div id="status-area">
+                    <div id="status-indicator" class="active" role="status" aria-live="polite" aria-hidden="false">
+                        <span class="spinner hidden" aria-hidden="true"></span>
+                        <span id="status-text">No model loaded.</span>
+                    </div>
+                </div>
+
+                <div id="input-area">
+                    <textarea id="prompt-input" placeholder="Enter your prompt..."></textarea>
+                    <button id="send-button">Send</button>
+                </div>
+            </div>
+
+            <aside id="model-info-panel" aria-labelledby="dashboard-title model-info-title">
+                <h2 id="dashboard-title">Dashboard</h2>
+                <div id="dashboard">
+                    <div class="dashboard-group" aria-label="Last interaction metrics">
+                        <div class="dashboard-group-title">Last Interaction</div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Prompt Tokens</span>
+                            <span class="dashboard-value" id="dashboard-last-prompt">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Context Tokens</span>
+                            <span class="dashboard-value" id="dashboard-last-context">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Completion Tokens</span>
+                            <span class="dashboard-value" id="dashboard-last-completion">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Total Tokens</span>
+                            <span class="dashboard-value" id="dashboard-last-total">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Response Time (s)</span>
+                            <span class="dashboard-value" id="dashboard-last-time">--</span>
+                        </div>
+                    </div>
+                    <div class="dashboard-group" aria-label="Session metrics">
+                        <div class="dashboard-group-title">Session</div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Context Window</span>
+                            <span class="dashboard-value" id="dashboard-context-window">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Session Tokens</span>
+                            <span class="dashboard-value" id="dashboard-session-total">--</span>
+                        </div>
+                        <div class="dashboard-metric">
+                            <span class="dashboard-label">Remaining Tokens</span>
+                            <span class="dashboard-value" id="dashboard-remaining">--</span>
+                        </div>
+                    </div>
+                </div>
+                <h2 id="model-info-title">Model Configuration</h2>
+                <div id="model-config-content">
+                    <div class="dashboard-group config-group">
+                        <div class="dashboard-group-title">Model Parameters</div>
+                        <p class="placeholder">Select a model to view its configuration.</p>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const modelSelect = document.getElementById('model-select');
+            const clearButton = document.getElementById('clear-history');
+            const chatContainer = document.getElementById('chat-container');
+            const promptInput = document.getElementById('prompt-input');
+            const sendButton = document.getElementById('send-button');
+            const loadModelButton = document.getElementById('load-model-button');
+            const statusIndicator = document.getElementById('status-indicator');
+            const statusText = document.getElementById('status-text');
+            const statusSpinner = statusIndicator ? statusIndicator.querySelector('.spinner') : null;
+            const uploadForm = document.getElementById('upload-form');
+            const fileInput = document.getElementById('file-input');
+            const modelConfigContainer = document.getElementById('model-config-content');
+            const dashboardElements = {
+                lastPrompt: document.getElementById('dashboard-last-prompt'),
+                lastContext: document.getElementById('dashboard-last-context'),
+                lastCompletion: document.getElementById('dashboard-last-completion'),
+                lastTotal: document.getElementById('dashboard-last-total'),
+                lastTime: document.getElementById('dashboard-last-time'),
+                contextWindow: document.getElementById('dashboard-context-window'),
+                sessionTotal: document.getElementById('dashboard-session-total'),
+                remaining: document.getElementById('dashboard-remaining'),
+            };
+
+            const allowedUpload = {
+                extensions: new Set(['.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.yaml', '.yml', '.log', '.ini', '.cfg', '.py', '.js', '.ts', '.html', '.css', '.xml', '.tex', '.pdf']),
+                mimePrefixes: ['text/'],
+                mimeTypes: new Set(['application/pdf', 'application/json'])
+            };
+            const uploadRestrictionMessage = 'Only text or PDF files can be uploaded.';
+
+            function isAllowedUpload(file) {
+                if (!file) {
+                    return false;
+                }
+                const type = (file.type || '').toLowerCase();
+                if (allowedUpload.mimeTypes.has(type)) {
+                    return true;
+                }
+                if (allowedUpload.mimePrefixes.some(prefix => type.startsWith(prefix))) {
+                    return true;
+                }
+                const name = (file.name || '').toLowerCase();
+                const dotIndex = name.lastIndexOf('.');
+                const extension = dotIndex >= 0 ? name.slice(dotIndex) : '';
+                if (extension && allowedUpload.extensions.has(extension)) {
+                    return true;
+                }
+                return false;
+            }
+
+            let currentModelConfig = null;
+            let lastUsageData = null;
+            let chatUsageData = null;
+            let isModelLoaded = false;
+            let isModelLoading = false;
+            let isChatLoading = false;
+            let currentLoadedModel = null;
+            let loadedModelConfig = null;
+            let availableModelConfigs = {};
+            let pendingModelName = null;
+            let statusMessageOverride = null;
+            let statusMessageTimeoutId = null;
+
+            updateModelConfig(null);
+            updateDefaultStatus();
+            updateControlsState();
+
+            // Fetch models and populate dropdown
+            try {
+                const response = await fetch('/api/models');
+                const data = await response.json();
+                const models = Array.isArray(data.models) ? data.models : [];
+                availableModelConfigs = data.models_config || {};
+                models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model;
+                    option.textContent = model;
+                    modelSelect.appendChild(option);
+                });
+                const initialSelection = data.selected_model || (models.length > 0 ? models[0] : '');
+                if (initialSelection) {
+                    modelSelect.value = initialSelection;
+                }
+                isModelLoaded = Boolean(data.is_model_loaded);
+                loadedModelConfig = data.current_model_config || null;
+                currentLoadedModel = isModelLoaded && loadedModelConfig ? (loadedModelConfig.model_name || initialSelection) : (isModelLoaded ? initialSelection : null);
+                statusMessageOverride = null;
+                if (statusMessageTimeoutId) {
+                    clearTimeout(statusMessageTimeoutId);
+                    statusMessageTimeoutId = null;
+                }
+                pendingModelName = null;
+
+                if (isModelLoaded && loadedModelConfig) {
+                    updateModelConfig(loadedModelConfig);
+                } else if (initialSelection) {
+                    const previewConfig = buildModelPreview(initialSelection);
+                    updateModelConfig(previewConfig);
+                } else {
+                    updateModelConfig(null);
+                }
+
+                updateDefaultStatus();
+                updateControlsState();
+            } catch (error) {
+                console.error('Error fetching models:', error);
+                availableModelConfigs = {};
+                isModelLoaded = false;
+                isModelLoading = false;
+                isChatLoading = false;
+                loadedModelConfig = null;
+                currentLoadedModel = null;
+                pendingModelName = null;
+                if (statusMessageTimeoutId) {
+                    clearTimeout(statusMessageTimeoutId);
+                    statusMessageTimeoutId = null;
+                }
+                statusMessageOverride = null;
+                updateModelConfig(null);
+                updateDefaultStatus();
+                updateControlsState();
+            }
+
+            // Selection change preview
+            modelSelect.addEventListener('change', () => {
+                const selectedModel = modelSelect.value;
+                if (!selectedModel) {
+                    updateModelConfig(null);
+                    clearStatusOverride();
+                    updateDefaultStatus();
+                    return;
+                }
+
+                if (loadedModelConfig && (loadedModelConfig.model_name === selectedModel || currentLoadedModel === selectedModel)) {
+                    clearStatusOverride();
+                    updateModelConfig(loadedModelConfig);
+                    updateDefaultStatus();
+                    return;
+                }
+
+                const previewConfig = buildModelPreview(selectedModel);
+                updateModelConfig(previewConfig);
+                if (!isModelLoading) {
+                    setStatusOverride('Model not loaded. Click "Load Model" to initialize.');
+                }
+                updateControlsState();
+            });
+
+            loadModelButton.addEventListener('click', async () => {
+                if (isModelLoading) {
+                    return;
+                }
+
+                const selectedModel = modelSelect.value;
+                if (!selectedModel) {
+                    setStatusOverride('Select a model before loading.', { temporary: true });
+                    return;
+                }
+
+                isModelLoading = true;
+                pendingModelName = selectedModel;
+                clearStatusOverride();
+                updateControlsState();
+                updateDefaultStatus();
+
+                try {
+                    const response = await fetch('/api/load_model', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model_name: selectedModel })
+                    });
+                    const data = await response.json();
+                    if (!response.ok || data.error) {
+                        const errorMessage = data?.error ?? 'Error: Could not load model.';
+                        addMessage(errorMessage, 'system-message');
+                        setStatusOverride(errorMessage, { temporary: true });
+                        return;
+                    }
+
+                    isModelLoaded = true;
+                    currentLoadedModel = data.model_config?.model_name || selectedModel;
+                    loadedModelConfig = data.model_config || null;
+                    updateModelConfig(loadedModelConfig);
+                    chatContainer.innerHTML = '';
+                    promptInput.value = '';
+                    lastUsageData = null;
+                    chatUsageData = null;
+                    updateDashboard(null, null);
+
+                    const confirmation = data?.message ?? `Loaded model: ${currentLoadedModel}`;
+                    const sessionClearedSuffix = data.session_cleared ? ' Previous chat session cleared.' : '';
+                    addMessage(confirmation + sessionClearedSuffix, 'system-message');
+                    clearStatusOverride();
+                } catch (error) {
+                    console.error('Error loading model:', error);
+                    addMessage('Error: Could not load model.', 'system-message');
+                    setStatusOverride('Error: Could not load model.', { temporary: true });
+                } finally {
+                    isModelLoading = false;
+                    pendingModelName = null;
+                    updateControlsState();
+                    updateDefaultStatus();
+                }
+            });
+
+            // Clear history
+            clearButton.addEventListener('click', async () => {
+                if (!isModelLoaded || isModelLoading) {
+                    setStatusOverride('Load a model before clearing history.', { temporary: true });
+                    return;
+                }
+                try {
+                    const response = await fetch('/api/clear', { method: 'POST' });
+                    const data = await response.json();
+                    if (!response.ok || data.error) {
+                        const errorMessage = data?.error ?? 'Error clearing history.';
+                        addMessage(errorMessage, 'system-message');
+                        if ((errorMessage || '').toLowerCase().includes('no model loaded')) {
+                            isModelLoaded = false;
+                            loadedModelConfig = null;
+                            currentLoadedModel = null;
+                        }
+                        setStatusOverride(errorMessage, { temporary: true });
+                        updateControlsState();
+                        updateDefaultStatus();
+                        return;
+                    }
+                    chatContainer.innerHTML = '';
+                    addMessage(data?.message ?? 'Chat history cleared.', 'system-message');
+                    updateDashboard(null, null);
+                    clearStatusOverride();
+                    updateControlsState();
+                    updateDefaultStatus();
+                } catch (error) {
+                    console.error('Error clearing history:', error);
+                    setStatusOverride('Error clearing history.', { temporary: true });
+                    updateControlsState();
+                    updateDefaultStatus();
+                }
+            });
+
+            uploadForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                if (!isModelLoaded || isModelLoading) {
+                    setStatusOverride('Load a model before uploading context.', { temporary: true });
+                    return;
+                }
+                if (!fileInput.files.length) {
+                    return;
+                }
+
+                const selectedFile = fileInput.files[0];
+                if (!isAllowedUpload(selectedFile)) {
+                    addMessage(uploadRestrictionMessage, 'system-message');
+                    setStatusOverride(uploadRestrictionMessage, { temporary: true });
+                    fileInput.value = '';
+                    return;
+                }
+
+                const formData = new FormData(uploadForm);
+
+                try {
+                    const response = await fetch('/api/uploadfile/', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok || data.error) {
+                        const errorMessage = data?.error ?? 'Error: Could not upload the file.';
+                        addMessage(errorMessage, 'system-message');
+                        if ((errorMessage || '').toLowerCase().includes('no model loaded')) {
+                            isModelLoaded = false;
+                            loadedModelConfig = null;
+                            currentLoadedModel = null;
+                        }
+                        setStatusOverride(errorMessage, { temporary: true });
+                        updateControlsState();
+                        updateDefaultStatus();
+                    } else {
+                        const successMessage = data.message ?? `File ${data.filename} uploaded successfully.`;
+                        const estimatedTokens = typeof data.estimated_tokens === 'number' ? data.estimated_tokens : null;
+                        const tokenSuffix = estimatedTokens !== null ? ` (~${formatTokenCount(estimatedTokens)} tokens)` : '';
+                        addMessage(successMessage + tokenSuffix, 'system-message');
+                        fileInput.value = '';
+                        clearStatusOverride();
+                        updateControlsState();
+                        updateDefaultStatus();
+                    }
+                } catch (error) {
+                    console.error('Error uploading file:', error);
+                    addMessage('Error: Could not upload the file.', 'system-message');
+                    setStatusOverride('Error: Could not upload the file.', { temporary: true });
+                    updateControlsState();
+                    updateDefaultStatus();
+                }
+            });
+
+            // Send prompt
+            sendButton.addEventListener('click', sendPrompt);
+            promptInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                    e.preventDefault();
+                    sendPrompt();
+                }
+            });
+
+            function renderStatus(message, { showSpinner = false, active = true } = {}) {
+                if (statusText) {
+                    statusText.textContent = message || '';
+                }
+                if (statusSpinner) {
+                    statusSpinner.classList.toggle('hidden', !showSpinner);
+                }
+                if (!statusIndicator) {
+                    return;
+                }
+                const shouldShow = active && (!!message || showSpinner);
+                if (shouldShow) {
+                    statusIndicator.classList.add('active');
+                    statusIndicator.setAttribute('aria-hidden', 'false');
+                } else {
+                    statusIndicator.classList.remove('active');
+                    statusIndicator.setAttribute('aria-hidden', 'true');
+                }
+            }
+
+            function setStatusOverride(message, options = {}) {
+                if (message == null) {
+                    clearStatusOverride();
+                    return;
+                }
+                if (statusMessageTimeoutId) {
+                    clearTimeout(statusMessageTimeoutId);
+                    statusMessageTimeoutId = null;
+                }
+                statusMessageOverride = message;
+                updateDefaultStatus();
+                if (options.temporary) {
+                    const duration = typeof options.duration === 'number' ? options.duration : 4000;
+                    statusMessageTimeoutId = window.setTimeout(() => {
+                        statusMessageTimeoutId = null;
+                        statusMessageOverride = null;
+                        updateDefaultStatus();
+                    }, duration);
+                }
+            }
+
+            function clearStatusOverride() {
+                if (statusMessageTimeoutId) {
+                    clearTimeout(statusMessageTimeoutId);
+                    statusMessageTimeoutId = null;
+                }
+                if (statusMessageOverride !== null) {
+                    statusMessageOverride = null;
+                    updateDefaultStatus();
+                }
+            }
+
+            function updateDefaultStatus() {
+                if (statusMessageOverride !== null) {
+                    renderStatus(statusMessageOverride, { showSpinner: false, active: true });
+                    return;
+                }
+                if (isModelLoading) {
+                    const suffix = pendingModelName ? `: ${pendingModelName}` : '';
+                    renderStatus(`Loading model${suffix}...`, { showSpinner: true, active: true });
+                    return;
+                }
+                if (isChatLoading) {
+                    renderStatus('Model is thinking...', { showSpinner: true, active: true });
+                    return;
+                }
+                if (!isModelLoaded) {
+                    renderStatus('No model loaded.', { showSpinner: false, active: true });
+                    return;
+                }
+                renderStatus('', { showSpinner: false, active: false });
+            }
+
+            function updateControlsState() {
+                const canSend = isModelLoaded && !isModelLoading && !isChatLoading;
+                if (sendButton) {
+                    sendButton.disabled = !canSend;
+                }
+                if (loadModelButton) {
+                    loadModelButton.disabled = isModelLoading;
+                }
+            }
+
+            function buildModelPreview(modelName) {
+                if (!modelName) {
+                    return null;
+                }
+                const hasConfig = availableModelConfigs && Object.prototype.hasOwnProperty.call(availableModelConfigs, modelName);
+                if (!hasConfig) {
+                    return null;
+                }
+                const config = availableModelConfigs[modelName];
+                return {
+                    model_name: modelName,
+                    ...config
+                };
+            }
+
+            function setLoadingState(isLoading) {
+                isChatLoading = isLoading;
+                updateControlsState();
+                updateDefaultStatus();
+            }
+
+            async function sendPrompt() {
+                if (sendButton.disabled) {
+                    return;
+                }
+                if (!isModelLoaded || isModelLoading) {
+                    updateDefaultStatus();
+                    return;
+                }
+
+                const prompt = promptInput.value.trim();
+                if (!prompt) {
+                    return;
+                }
+
+                clearStatusOverride();
+                const userMessageElement = addMessage(prompt, 'user-message');
+                promptInput.value = '';
+                setLoadingState(true);
+
+                try {
+                    const response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt: prompt })
+                    });
+                    const data = await response.json();
+                    if (!response.ok || data.error) {
+                        const errorMessage = data?.error ?? 'Error: Could not get response from server.';
+                        const assistantError = addMessage(errorMessage, 'assistant-message');
+                        setMessageMeta(userMessageElement, '');
+                        setMessageMeta(assistantError, '');
+                        if ((errorMessage || '').toLowerCase().includes('no model loaded')) {
+                            isModelLoaded = false;
+                            loadedModelConfig = null;
+                            currentLoadedModel = null;
+                        }
+                        setStatusOverride(errorMessage, { temporary: true });
+                        updateControlsState();
+                        updateDefaultStatus();
+                        return;
+                    }
+
+                    const assistantMessageElement = addMessage(data.response ?? '', 'assistant-message');
+
+                    if (data.usage) {
+                        setMessageMeta(userMessageElement, formatUserMeta(data.usage));
+                        setMessageMeta(assistantMessageElement, formatAssistantMeta(data.usage));
+                    } else {
+                        setMessageMeta(userMessageElement, '');
+                        setMessageMeta(assistantMessageElement, '');
+                    }
+
+                    updateDashboard(data.usage, data.chat_usage);
+                    clearStatusOverride();
+                } catch (error) {
+                    console.error('Error sending prompt:', error);
+                    const assistantMessageElement = addMessage('Error: Could not get response from server.', 'assistant-message');
+                    setMessageMeta(userMessageElement, '');
+                    setMessageMeta(assistantMessageElement, '');
+                    setStatusOverride('Error: Could not get response from server.', { temporary: true });
+                } finally {
+                    setLoadingState(false);
+                }
+            }
+
+            function updateModelConfig(config) {
+                currentModelConfig = config || null;
+                modelConfigContainer.innerHTML = '';
+                if (!config) {
+                    const group = document.createElement('div');
+                    group.className = 'dashboard-group config-group';
+                    const title = document.createElement('div');
+                    title.className = 'dashboard-group-title';
+                    title.textContent = 'Model Parameters';
+                    group.appendChild(title);
+
+                    const placeholder = document.createElement('p');
+                    placeholder.className = 'placeholder';
+                    placeholder.textContent = 'Select a model to view its configuration.';
+                    group.appendChild(placeholder);
+
+                    modelConfigContainer.appendChild(group);
+                    updateDashboard();
+                    return;
+                }
+
+                const group = document.createElement('div');
+                group.className = 'dashboard-group config-group';
+                const title = document.createElement('div');
+                title.className = 'dashboard-group-title';
+                title.textContent = 'Model Parameters';
+                group.appendChild(title);
+
+                const prioritizedKeys = [
+                    'model_name',
+                    'model_path',
+                    'chat_format',
+                    'system_prompt',
+                    'n_context_size',
+                    'n_threads',
+                    'n_threads_batch',
+                    'verbose',
+                    'use_mmap',
+                    'logits_all'
+                ];
+
+                const seen = new Set();
+                const orderedEntries = [];
+
+                prioritizedKeys.forEach((key) => {
+                    if (key in config) {
+                        orderedEntries.push([key, config[key]]);
+                        seen.add(key);
+                    }
+                });
+
+                Object.entries(config).forEach(([key, value]) => {
+                    if (!seen.has(key)) {
+                        orderedEntries.push([key, value]);
+                    }
+                });
+
+                orderedEntries.forEach(([key, value]) => {
+                    const metric = document.createElement('div');
+                    metric.className = 'dashboard-metric config-metric';
+
+                    const label = document.createElement('span');
+                    label.className = 'dashboard-label';
+                    label.textContent = formatConfigLabel(key);
+
+                    const metricValue = document.createElement('span');
+                    metricValue.className = 'dashboard-value';
+                    metricValue.textContent = formatConfigValue(value);
+
+                    metric.appendChild(label);
+                    metric.appendChild(metricValue);
+                    group.appendChild(metric);
+                });
+
+                modelConfigContainer.appendChild(group);
+                updateDashboard();
+            }
+
+            function formatConfigLabel(key) {
+                return key
+                    .split('_')
+                    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join(' ');
+            }
+
+            function formatConfigValue(value) {
+                if (typeof value === 'boolean') {
+                    return value ? 'Yes' : 'No';
+                }
+                return String(value);
+            }
+
+            function addMessage(content, className) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message ' + className;
+
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content';
+                if (className === 'assistant-message') {
+                    messageContent.innerHTML = marked.parse(String(content ?? ''));
+                } else {
+                    messageContent.textContent = content ?? '';
+                }
+                messageDiv.appendChild(messageContent);
+
+                chatContainer.appendChild(messageDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                return messageDiv;
+            }
+
+            function setMessageMeta(messageElement, text) {
+                if (!messageElement) {
+                    return;
+                }
+
+                let metaElement = messageElement.querySelector('.message-meta');
+                if (!text) {
+                    if (metaElement) {
+                        metaElement.remove();
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                    }
+                    return;
+                }
+
+                if (!metaElement) {
+                    metaElement = document.createElement('div');
+                    metaElement.className = 'message-meta';
+                    messageElement.appendChild(metaElement);
+                }
+                metaElement.textContent = text;
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+
+            function formatTokenCount(value) {
+                if (value === undefined || value === null || Number.isNaN(Number(value))) {
+                    return null;
+                }
+                return Number(value).toLocaleString();
+            }
+
+            function formatDuration(seconds) {
+                if (seconds === undefined || seconds === null || Number.isNaN(Number(seconds))) {
+                    return null;
+                }
+                return Number(seconds).toFixed(2);
+            }
+
+            function formatUserMeta(usage) {
+                if (!usage || usage.prompt_tokens === undefined || usage.prompt_tokens === null) {
+                    return '';
+                }
+
+                const promptTokens = formatTokenCount(usage.prompt_tokens);
+                const contextTokens = formatTokenCount(usage.context_tokens);
+
+                if (!promptTokens) {
+                    return '';
+                }
+
+                const parts = [`Tokens: ${promptTokens}`];
+                if (contextTokens && Number(usage.context_tokens) > 0) {
+                    parts.push(`Context: ${contextTokens}`);
+                }
+                return parts.join(' · ');
+            }
+
+            function formatAssistantMeta(usage) {
+                if (!usage) {
+                    return '';
+                }
+
+                const parts = [];
+                const responseTime = formatDuration(usage.response_seconds);
+                if (responseTime) {
+                    parts.push(`Response time: ${responseTime}s`);
+                }
+
+                const completionTokens = formatTokenCount(usage.completion_tokens);
+                if (completionTokens) {
+                    parts.push(`Completion tokens: ${completionTokens}`);
+                }
+
+                const totalTokens = formatTokenCount(usage.total_tokens);
+                if (totalTokens) {
+                    parts.push(`Total tokens: ${totalTokens}`);
+                }
+
+                return parts.join(' · ');
+            }
+
+            function updateDashboard(usage, chatUsage) {
+                if (usage !== undefined) {
+                    lastUsageData = usage || null;
+                }
+                if (chatUsage !== undefined) {
+                    chatUsageData = chatUsage || null;
+                }
+
+                const usageData = lastUsageData;
+                setDashboardValue(dashboardElements.lastPrompt, usageData?.prompt_tokens);
+                setDashboardValue(dashboardElements.lastContext, usageData?.context_tokens);
+                setDashboardValue(dashboardElements.lastCompletion, usageData?.completion_tokens);
+                setDashboardValue(dashboardElements.lastTotal, usageData?.total_tokens);
+                setDashboardValue(dashboardElements.lastTime, usageData?.response_seconds, 2);
+
+                const contextWindow = extractContextWindow();
+                setDashboardValue(dashboardElements.contextWindow, contextWindow);
+
+                const sessionData = chatUsageData;
+                setDashboardValue(dashboardElements.sessionTotal, sessionData?.total_tokens);
+
+                let remainingTokens = null;
+                if (contextWindow != null) {
+                    const usedTokens = sessionData?.total_tokens != null ? Number(sessionData.total_tokens) : 0;
+                    remainingTokens = Math.max(0, Number(contextWindow) - usedTokens);
+                }
+                setDashboardValue(dashboardElements.remaining, remainingTokens);
+            }
+
+            function setDashboardValue(element, value, decimals = 0) {
+                if (!element) {
+                    return;
+                }
+                if (value === undefined || value === null || Number.isNaN(Number(value))) {
+                    element.textContent = '--';
+                    return;
+                }
+
+                const numericValue = Number(value);
+                const options = {
+                    minimumFractionDigits: decimals,
+                    maximumFractionDigits: decimals
+                };
+                element.textContent = numericValue.toLocaleString(undefined, options);
+            }
+
+            function extractContextWindow() {
+                if (!currentModelConfig) {
+                    return null;
+                }
+
+                const candidateKeys = ['n_context_size', 'context_window', 'context_size', 'n_ctx'];
+                for (const key of candidateKeys) {
+                    const value = currentModelConfig[key];
+                    if (value !== undefined && value !== null && !Number.isNaN(Number(value))) {
+                        return Number(value);
+                    }
+                }
+
+                return null;
+            }
+        });
+    </script>
+</body>
+</html>
+
