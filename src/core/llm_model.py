@@ -223,3 +223,8 @@ class LlmModel:
             context_tokens=context_tokens,
             response_seconds=response_seconds,
         )
+
+    def set_system_prompt(self, system_prompt: str) -> None:
+        """Update the cached system prompt for the underlying model."""
+
+        self._llm_config.system_prompt = system_prompt

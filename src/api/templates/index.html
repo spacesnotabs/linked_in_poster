@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -15,6 +15,19 @@
                 <label for="model-select">Model:</label>
                 <select id="model-select"></select>
                 <button id="load-model-button" type="button">Load Model</button>
+            </div>
+            <div class="menu-group" id="prompt-menu-group">
+                <label for="prompt-select">Prompt:</label>
+                <select id="prompt-select">
+                    <option value="__default__">You are a helpful assistant.</option>
+                </select>
+                <div class="prompt-action-row">
+                    <button id="set-prompt-button" type="button">Set Prompt</button>
+                    <button id="preview-prompt-button" type="button">Preview</button>
+                </div>
+                <div id="prompt-preview-container" class="prompt-preview-container" hidden>
+                    <pre id="prompt-preview" class="prompt-preview-text"></pre>
+                </div>
             </div>
             <div class="menu-group">
                 <form id="upload-form" action="/api/uploadfile/" method="post" enctype="multipart/form-data">
@@ -106,6 +119,11 @@
             const promptInput = document.getElementById('prompt-input');
             const sendButton = document.getElementById('send-button');
             const loadModelButton = document.getElementById('load-model-button');
+            const promptSelect = document.getElementById('prompt-select');
+            const setPromptButton = document.getElementById('set-prompt-button');
+            const previewPromptButton = document.getElementById('preview-prompt-button');
+            const promptPreviewContainer = document.getElementById('prompt-preview-container');
+            const promptPreviewText = document.getElementById('prompt-preview');
             const statusIndicator = document.getElementById('status-indicator');
             const statusText = document.getElementById('status-text');
             const statusSpinner = statusIndicator ? statusIndicator.querySelector('.spinner') : null;
@@ -162,6 +180,12 @@
             let pendingModelName = null;
             let statusMessageOverride = null;
             let statusMessageTimeoutId = null;
+            let promptCatalog = [];
+            let defaultPromptText = 'You are a helpful assistant.';
+            let isPromptCatalogLoading = false;
+            let isPromptApplying = false;
+            let isPromptPreviewLoading = false;
+            const promptPreviewCache = new Map();
 
             updateModelConfig(null);
             updateDefaultStatus();
@@ -223,6 +247,8 @@
                 updateControlsState();
             }
 
+            await loadPrompts();
+
             // Selection change preview
             modelSelect.addEventListener('change', () => {
                 const selectedModel = modelSelect.value;
@@ -247,6 +273,13 @@
                 }
                 updateControlsState();
             });
+
+            if (promptSelect) {
+                promptSelect.addEventListener('change', () => {
+                    hidePromptPreview();
+                    updateControlsState();
+                });
+            }
 
             loadModelButton.addEventListener('click', async () => {
                 if (isModelLoading) {
@@ -304,6 +337,100 @@
                     updateDefaultStatus();
                 }
             });
+
+            if (previewPromptButton) {
+                previewPromptButton.addEventListener('click', async () => {
+                    if (!promptSelect || isPromptPreviewLoading || isPromptCatalogLoading) {
+                        return;
+                    }
+                    const selectedPrompt = promptSelect.value || '__default__';
+                    isPromptPreviewLoading = true;
+                    updateControlsState();
+                    try {
+                        const previewText = await fetchPromptPreview(selectedPrompt);
+                        showPromptPreview(previewText);
+                    } catch (error) {
+                        console.error('Error fetching prompt preview:', error);
+                        setStatusOverride('Unable to load prompt preview.', { temporary: true });
+                    } finally {
+                        isPromptPreviewLoading = false;
+                        updateControlsState();
+                    }
+                });
+            }
+
+            if (setPromptButton) {
+                setPromptButton.addEventListener('click', async () => {
+                    if (!promptSelect) {
+                        return;
+                    }
+                    if (!isModelLoaded || isModelLoading) {
+                        setStatusOverride('Load a model before setting a prompt.', { temporary: true });
+                        return;
+                    }
+                    const selectedPrompt = promptSelect.value || '__default__';
+                    if (isPromptApplying) {
+                        return;
+                    }
+                    isPromptApplying = true;
+                    updateControlsState();
+                    clearStatusOverride();
+
+                    try {
+                        const response = await fetch('/api/prompts/apply', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                prompt_name: selectedPrompt === '__default__' ? null : selectedPrompt
+                            }),
+                        });
+                        const data = await response.json();
+                        if (!response.ok || data.error) {
+                            const errorMessage = data?.error ?? 'Failed to apply prompt.';
+                            addMessage(errorMessage, 'system-message');
+                            setStatusOverride(errorMessage, { temporary: true });
+                            return;
+                        }
+
+                        chatContainer.innerHTML = '';
+                        promptInput.value = '';
+                        lastUsageData = null;
+                        chatUsageData = null;
+                        updateDashboard(null, null);
+
+                        if (data.controller_state) {
+                            const controllerState = data.controller_state;
+                            const activeId = controllerState.active_model;
+                            if (activeId && controllerState.models && controllerState.models[activeId]) {
+                                const modelState = controllerState.models[activeId];
+                                loadedModelConfig = modelState.config || loadedModelConfig;
+                                currentLoadedModel = activeId;
+                                isModelLoaded = true;
+                            }
+                        }
+
+                        if (typeof data.prompt_text === 'string') {
+                            const cacheKey = selectedPrompt === '__default__' ? '__default__' : (data.prompt_name || selectedPrompt);
+                            promptPreviewCache.set(cacheKey, data.prompt_text);
+                            showPromptPreview(data.prompt_text);
+                        } else {
+                            hidePromptPreview();
+                        }
+
+                        const successMessage = data.message || 'Prompt applied.';
+                        addMessage(successMessage, 'system-message');
+                        clearStatusOverride();
+                    } catch (error) {
+                        console.error('Error applying prompt:', error);
+                        const errorMessage = 'Error: Could not set prompt.';
+                        addMessage(errorMessage, 'system-message');
+                        setStatusOverride(errorMessage, { temporary: true });
+                    } finally {
+                        isPromptApplying = false;
+                        updateControlsState();
+                    }
+                });
+            }
 
             // Clear history
             clearButton.addEventListener('click', async () => {
@@ -489,6 +616,17 @@
                 if (loadModelButton) {
                     loadModelButton.disabled = isModelLoading;
                 }
+                if (promptSelect) {
+                    promptSelect.disabled = isPromptCatalogLoading;
+                }
+                if (setPromptButton) {
+                    const disableSetPrompt = !isModelLoaded || isModelLoading || isPromptApplying || isPromptCatalogLoading;
+                    setPromptButton.disabled = disableSetPrompt;
+                }
+                if (previewPromptButton) {
+                    const disablePreview = isPromptCatalogLoading || isPromptPreviewLoading || !promptSelect || !promptSelect.value;
+                    previewPromptButton.disabled = disablePreview;
+                }
             }
 
             function buildModelPreview(modelName) {
@@ -510,6 +648,102 @@
                 isChatLoading = isLoading;
                 updateControlsState();
                 updateDefaultStatus();
+            }
+
+            function hidePromptPreview() {
+                if (promptPreviewContainer) {
+                    promptPreviewContainer.setAttribute('hidden', '');
+                }
+                if (promptPreviewText) {
+                    promptPreviewText.textContent = '';
+                }
+            }
+
+            function showPromptPreview(text) {
+                if (promptPreviewContainer) {
+                    promptPreviewContainer.removeAttribute('hidden');
+                }
+                if (promptPreviewText) {
+                    const displayText = text && text.trim() ? text : 'No prompt text available.';
+                    promptPreviewText.textContent = displayText;
+                }
+            }
+
+            async function fetchPromptPreview(promptName) {
+                if (promptPreviewCache.has(promptName)) {
+                    return promptPreviewCache.get(promptName);
+                }
+                const response = await fetch(`/api/prompts/${encodeURIComponent(promptName)}`);
+                const data = await response.json();
+                if (!response.ok || data.error) {
+                    throw new Error(data?.error ?? 'Failed to fetch prompt preview.');
+                }
+                const textValue = typeof data.prompt_text === 'string' ? data.prompt_text : '';
+                promptPreviewCache.set(promptName, textValue);
+                return textValue;
+            }
+
+            function populatePromptOptions() {
+                if (!promptSelect) {
+                    return;
+                }
+                const previousValue = promptSelect.value;
+                promptSelect.innerHTML = '';
+
+                const defaultOption = document.createElement('option');
+                defaultOption.value = '__default__';
+                defaultOption.textContent = defaultPromptText || 'You are a helpful assistant.';
+                defaultOption.title = defaultPromptText || '';
+                promptSelect.appendChild(defaultOption);
+
+                promptCatalog.forEach(entry => {
+                    if (!entry || !entry.name) {
+                        return;
+                    }
+                    const option = document.createElement('option');
+                    option.value = entry.name;
+                    option.textContent = entry.name;
+                    if (entry.task) {
+                        option.title = entry.task;
+                    }
+                    promptSelect.appendChild(option);
+                });
+
+                if (previousValue && Array.from(promptSelect.options).some(option => option.value === previousValue)) {
+                    promptSelect.value = previousValue;
+                } else {
+                    promptSelect.value = '__default__';
+                }
+                hidePromptPreview();
+            }
+
+            async function loadPrompts() {
+                if (!promptSelect) {
+                    return;
+                }
+                isPromptCatalogLoading = true;
+                updateControlsState();
+                try {
+                    const response = await fetch('/api/prompts');
+                    const data = await response.json();
+                    if (!response.ok || data.error) {
+                        throw new Error(data?.error ?? 'Failed to load prompts.');
+                    }
+                    promptCatalog = Array.isArray(data.prompts) ? data.prompts : [];
+                    defaultPromptText = data.default_prompt || defaultPromptText;
+                    populatePromptOptions();
+                    promptPreviewCache.clear();
+                    promptPreviewCache.set('__default__', defaultPromptText);
+                } catch (error) {
+                    console.error('Error loading prompts:', error);
+                    promptCatalog = [];
+                    populatePromptOptions();
+                    promptPreviewCache.clear();
+                    promptPreviewCache.set('__default__', defaultPromptText);
+                } finally {
+                    isPromptCatalogLoading = false;
+                    updateControlsState();
+                }
             }
 
             async function sendPrompt() {
@@ -832,4 +1066,5 @@
     </script>
 </body>
 </html>
+
 

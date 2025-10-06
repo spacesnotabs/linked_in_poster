@@ -386,3 +386,37 @@ code {
     overflow-wrap: anywhere;
     overflow-y: auto;
 }
+/* Prompt selection styles */
+#prompt-menu-group select,
+#prompt-menu-group button {
+    width: 100%;
+}
+
+.prompt-action-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.prompt-action-row button {
+    flex: 1 1 auto;
+}
+
+.prompt-preview-container {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    background-color: #f8f9fb;
+    max-height: 220px;
+    overflow: auto;
+}
+
+.prompt-preview-text {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

@@ -103,7 +103,7 @@ async def get_models():
     }
 
 
-from src.api.schemas import ChatRequest, ChatResponse, ModelSwitchRequest
+from src.api.schemas import ChatRequest, ChatResponse, ModelSwitchRequest, PromptApplyRequest
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -157,6 +157,87 @@ async def load_model(switch_request: ModelSwitchRequest):
 @app.post("/api/switch_model")
 async def switch_model(switch_request: ModelSwitchRequest):
     return _load_model(switch_request.model_name)
+
+
+@app.get("/api/prompts", response_class=JSONResponse)
+async def get_prompts():
+    """Return available prompt metadata and the current defaults."""
+
+    prompt_entries = []
+    for name in llm_controller.list_prompts():
+        try:
+            prompt_definition = llm_controller.get_prompt(name)
+        except KeyError:
+            continue
+        prompt_entries.append({
+            "name": name,
+            "task": prompt_definition.get("task"),
+        })
+
+    controller_state = llm_controller.get_state()
+    default_prompt_text = controller_state.get("default_system_prompt", SYSTEM_PROMPT)
+    active_prompt_text = llm_controller.get_active_system_prompt() if llm_controller.loaded_models else None
+
+    return {
+        "prompts": prompt_entries,
+        "default_prompt": default_prompt_text,
+        "active_prompt": active_prompt_text,
+        "is_model_loaded": bool(llm_controller.loaded_models),
+    }
+
+
+@app.get("/api/prompts/{prompt_name}", response_class=JSONResponse)
+async def get_prompt_preview(prompt_name: str):
+    """Return the rendered prompt text for preview purposes."""
+
+    if prompt_name == "__default__":
+        controller_state = llm_controller.get_state()
+        return {
+            "name": "__default__",
+            "prompt_text": controller_state.get("default_system_prompt", SYSTEM_PROMPT),
+            "definition": None,
+        }
+
+    try:
+        prompt_definition = llm_controller.get_prompt(prompt_name)
+        prompt_text = llm_controller.render_prompt(prompt_name)
+    except KeyError:
+        return JSONResponse({"error": "Prompt not found."}, status_code=404)
+
+    return {
+        "name": prompt_name,
+        "prompt_text": prompt_text,
+        "definition": prompt_definition,
+    }
+
+
+@app.post("/api/prompts/apply", response_class=JSONResponse)
+async def apply_prompt(request: PromptApplyRequest):
+    """Set the system prompt on the active model session."""
+
+    if not llm_controller.loaded_models:
+        return JSONResponse({"error": "No model loaded."}, status_code=400)
+
+    requested_name = (request.prompt_name or "").strip() or "__default__"
+
+    if requested_name == "__default__":
+        controller_state = llm_controller.get_state()
+        prompt_text = controller_state.get("default_system_prompt", SYSTEM_PROMPT)
+        llm_controller.set_system_prompt(prompt_text)
+    else:
+        try:
+            prompt_text = llm_controller.apply_prompt(requested_name)
+        except KeyError:
+            return JSONResponse({"error": "Prompt not found."}, status_code=404)
+
+    controller_state = llm_controller.get_state()
+    message_name = "Default prompt" if requested_name == "__default__" else requested_name
+    return {
+        "message": f"Applied prompt: {message_name}",
+        "prompt_name": requested_name,
+        "prompt_text": prompt_text,
+        "controller_state": controller_state,
+    }
 
 
 @app.post("/api/uploadfile/")

@@ -20,3 +20,6 @@ class ChatResponse(BaseModel):
 
 class ModelSwitchRequest(BaseModel):
     model_name: str
+
+class PromptApplyRequest(BaseModel):
+    prompt_name: Optional[str] = None
