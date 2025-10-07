@@ -23,3 +23,13 @@ class ModelSwitchRequest(BaseModel):
 
 class PromptApplyRequest(BaseModel):
     prompt_name: Optional[str] = None
+
+class ModelSettingsPayload(BaseModel):
+    model_name: str
+    context_size: int
+    n_context_size: int
+    n_threads: int
+    n_threads_batch: int
+    verbose: bool
+    use_mmap: bool
+    logits_all: bool

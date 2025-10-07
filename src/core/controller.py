@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Optional, Union
@@ -40,6 +41,7 @@ class LLMController:
         self._sessions: dict[str, ModelSession] = {}
         self._model_errors: dict[str, str] = {}
         self._active_model_id: Optional[str] = None
+        self._runtime_overrides: dict[str, dict[str, Any]] = {}
 
         controller_root = Path(__file__).resolve().parents[1]
         default_prompts_path = controller_root / "agents" / "prompts.json"
@@ -170,6 +172,19 @@ class LLMController:
                 f"Invalid context window value '{context_window}' for model '{model_id}'."
             ) from None
 
+        runtime_overrides = copy.deepcopy(self._runtime_overrides.get(model_id, {}))
+        override_context = runtime_overrides.get("context_size") or runtime_overrides.get("n_context_size")
+        if override_context is not None:
+            try:
+                context_size = int(override_context)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"Invalid context override '{override_context}' for model '{model_id}'."
+                ) from None
+        else:
+            runtime_overrides.setdefault("context_size", context_size)
+            runtime_overrides.setdefault("n_context_size", context_size)
+
         prompt = (config.get("system_prompt") or self._system_prompt or "").strip()
         n_gpu_layers = config.get("n_gpu_layers", -1)
 
@@ -181,6 +196,7 @@ class LLMController:
                 chat_format=chat_format,
                 n_gpu_layers=n_gpu_layers,
                 context_size=context_size,
+                config_overrides=runtime_overrides or None,
             )
         except Exception as exc:
             self._model_errors[model_id] = str(exc)
@@ -195,6 +211,62 @@ class LLMController:
         self._sessions[model_id] = session
         self._set_active_model(model_id)
         return model
+
+    def get_runtime_overrides(self, model_id: str) -> dict[str, Any]:
+        return copy.deepcopy(self._runtime_overrides.get(model_id, {}))
+
+    def set_runtime_overrides(self, model_id: str, overrides: dict[str, Any]) -> dict[str, Any]:
+        sanitized = self._sanitize_runtime_overrides(overrides)
+        self._runtime_overrides[model_id] = sanitized
+
+        base_config = self._models_config.get(model_id)
+        if base_config is not None:
+            context_value = sanitized.get("context_size")
+            if context_value is not None:
+                base_config["context_window"] = context_value
+                base_config["context_size"] = context_value
+            base_config["runtime_overrides"] = sanitized.copy()
+
+        model_entry = MODELS_CONFIG.get(model_id)
+        if model_entry is not None:
+            model_entry["runtime_overrides"] = sanitized.copy()
+            context_value = sanitized.get("context_size")
+            if context_value is not None:
+                model_entry["context_window"] = context_value
+                model_entry["context_size"] = context_value
+
+        return sanitized
+
+    def get_effective_runtime_config(self, model_id: str) -> dict[str, Any]:
+        values = self._default_runtime_values(model_id)
+        base_config = self._models_config.get(model_id, {})
+        context_value = base_config.get("context_window") or base_config.get("context_size")
+        if context_value is not None:
+            try:
+                coerced = int(context_value)
+                values["context_size"] = coerced
+                values["n_context_size"] = coerced
+            except (TypeError, ValueError):
+                pass
+
+        stored = base_config.get("runtime_overrides")
+        if isinstance(stored, dict):
+            for key in values:
+                if key in stored and stored[key] is not None:
+                    values[key] = stored[key]
+
+        overrides = self._runtime_overrides.get(model_id, {})
+        for key in values:
+            if key in overrides and overrides[key] is not None:
+                values[key] = overrides[key]
+
+        if model_id in self._active_models:
+            current_config = self._active_models[model_id].get_model_config()
+            for key in values:
+                if key in current_config and current_config[key] is not None:
+                    values[key] = current_config[key]
+
+        return self._sanitize_runtime_overrides(values)
 
     def get_state(self) -> dict[str, Any]:
         models_state: dict[str, Any] = {}
@@ -445,3 +517,63 @@ class LLMController:
         aggregate.total_tokens += usage.total_tokens
         aggregate.context_tokens += usage.context_tokens
         aggregate.response_seconds = None
+
+    def _default_runtime_values(self, _model_id: str) -> dict[str, Any]:
+        cpu_threads = os.cpu_count() or 1
+        return {
+            "context_size": 32768,
+            "n_context_size": 32768,
+            "n_threads": cpu_threads,
+            "n_threads_batch": max(cpu_threads // 2, 1),
+            "verbose": False,
+            "use_mmap": True,
+            "logits_all": False,
+        }
+
+    def _sanitize_runtime_overrides(self, overrides: dict[str, Any]) -> dict[str, Any]:
+        allowed = {
+            "context_size",
+            "n_context_size",
+            "n_threads",
+            "n_threads_batch",
+            "verbose",
+            "use_mmap",
+            "logits_all",
+        }
+        int_fields = {"context_size", "n_context_size", "n_threads", "n_threads_batch"}
+        bool_fields = {"verbose", "use_mmap", "logits_all"}
+
+        sanitized: dict[str, Any] = {}
+        for key in allowed:
+            if key not in overrides:
+                continue
+            value = overrides[key]
+            if value is None or value == "":
+                continue
+            if key in int_fields:
+                try:
+                    sanitized[key] = int(value)
+                except (TypeError, ValueError):
+                    continue
+            elif key in bool_fields:
+                sanitized[key] = self._coerce_bool(value)
+
+        if "context_size" in sanitized and "n_context_size" not in sanitized:
+            sanitized["n_context_size"] = sanitized["context_size"]
+        if "n_context_size" in sanitized and "context_size" not in sanitized:
+            sanitized["context_size"] = sanitized["n_context_size"]
+
+        threads = sanitized.get("n_threads")
+        if threads is not None and "n_threads_batch" not in sanitized:
+            sanitized["n_threads_batch"] = max(int(threads) // 2, 1)
+
+        return sanitized
+
+    def _coerce_bool(self, value: Any) -> bool:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "off"}:
+                return False
+        return bool(value)

@@ -17,6 +17,13 @@ from src.config import MODELS_CONFIG, MODEL_NAMES, SYSTEM_PROMPT
 from src.core.controller import LLMController
 from src.core.llm_model import LlmModel, UsageMetrics
 from src.utils.utils import read_file
+from src.api.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ModelSettingsPayload,
+    ModelSwitchRequest,
+    PromptApplyRequest,
+)
 
 # --- FastAPI App Initialization ---
 app = FastAPI()
@@ -85,6 +92,11 @@ async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+@app.get("/settings", response_class=HTMLResponse)
+async def render_settings_page(request: Request):
+    return templates.TemplateResponse("model_settings.html", {"request": request})
+
+
 @app.get("/api/models", response_class=JSONResponse)
 async def get_models():
     """Return available model names and the currently selected model."""
@@ -103,7 +115,59 @@ async def get_models():
     }
 
 
-from src.api.schemas import ChatRequest, ChatResponse, ModelSwitchRequest, PromptApplyRequest
+@app.get("/api/model_settings", response_class=JSONResponse)
+async def get_model_settings(model_name: Optional[str] = None):
+    """Return effective runtime parameters for the requested model."""
+
+    resolved_name = (model_name or "").strip()
+    if not resolved_name:
+        resolved_name = selected_model_name or (MODEL_NAMES[0] if MODEL_NAMES else "")
+
+    if not resolved_name:
+        return JSONResponse({"error": "No models configured."}, status_code=404)
+    if resolved_name not in MODEL_NAMES:
+        return JSONResponse({"error": "Model not found."}, status_code=404)
+
+    settings = llm_controller.get_effective_runtime_config(resolved_name)
+    is_loaded = resolved_name in llm_controller.loaded_models
+    is_active = llm_controller.active_model_id == resolved_name
+
+    current_config = None
+    if is_loaded:
+        current_config = llm_controller.get_model(resolved_name).get_model_config()
+
+    return {
+        "model_name": resolved_name,
+        "settings": settings,
+        "is_loaded": is_loaded,
+        "is_active": is_active,
+        "current_config": current_config,
+        "requires_reload": is_loaded,
+    }
+
+
+@app.post("/api/model_settings", response_class=JSONResponse)
+async def update_model_settings(payload: ModelSettingsPayload):
+    """Persist runtime override values for subsequent model loads."""
+
+    data = payload.dict()
+    model_name = data.pop("model_name")
+
+    if model_name not in MODEL_NAMES:
+        return JSONResponse({"error": "Model not found."}, status_code=404)
+
+    sanitized = llm_controller.set_runtime_overrides(model_name, data)
+
+    return {
+        "model_name": model_name,
+        "settings": sanitized,
+        "requires_reload": model_name in llm_controller.loaded_models,
+        "message": (
+            "Settings saved. Reload the model to apply changes."
+            if model_name in llm_controller.loaded_models
+            else "Settings saved. They will be used on next load."
+        ),
+    }
 
 
 @app.post("/api/chat", response_model=ChatResponse)

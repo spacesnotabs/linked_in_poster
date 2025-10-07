@@ -54,6 +54,7 @@ class LlmModel:
         chat_format: str,
         n_gpu_layers: int = -1,
         context_size: int = 32768,
+        config_overrides: Optional[dict[str, Any]] = None,
     ) -> None:
         self.initialize_model(
             model_path=model_path,
@@ -62,6 +63,7 @@ class LlmModel:
             chat_format=chat_format,
             n_gpu_layers=n_gpu_layers,
             context_size=context_size,
+            config_overrides=config_overrides,
         )
 
     def initialize_model(
@@ -72,6 +74,7 @@ class LlmModel:
         chat_format: str,
         n_gpu_layers: int = -1,
         context_size: int = 32768,
+        config_overrides: Optional[dict[str, Any]] = None,
     ) -> None:
         """Initialize the underlying llama.cpp model."""
 
@@ -91,6 +94,7 @@ class LlmModel:
             logits_all=False,
             chat_format=chat_format,
         )
+        self._apply_overrides(config_overrides or {})
         self._model_name = model_name
 
         if model_path == "DUMMY":
@@ -106,6 +110,35 @@ class LlmModel:
                 use_mmap=self._llm_config.use_mmap,
                 logits_all=self._llm_config.logits_all,
             )
+
+    def _apply_overrides(self, overrides: dict[str, Any]) -> None:
+        if not overrides:
+            return
+
+        int_fields = {"context_size", "n_context_size", "n_threads", "n_threads_batch"}
+        bool_fields = {"verbose", "use_mmap", "logits_all"}
+
+        for key, value in overrides.items():
+            if value is None or not hasattr(self._llm_config, key):
+                continue
+            if key in int_fields:
+                try:
+                    coerced = int(value)
+                except (TypeError, ValueError):
+                    continue
+                setattr(self._llm_config, key, coerced)
+            elif key in bool_fields:
+                if isinstance(value, str):
+                    normalized = value.strip().lower()
+                    coerced = normalized in {"1", "true", "yes", "on"}
+                else:
+                    coerced = bool(value)
+                setattr(self._llm_config, key, coerced)
+
+        if self._llm_config.context_size is None and self._llm_config.n_context_size is not None:
+            self._llm_config.context_size = self._llm_config.n_context_size
+        if self._llm_config.n_context_size is None and self._llm_config.context_size is not None:
+            self._llm_config.n_context_size = self._llm_config.context_size
 
     def _create_dummy_model(self) -> Any:
         class DummyLlama:

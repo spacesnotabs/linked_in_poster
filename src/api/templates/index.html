@@ -15,6 +15,7 @@
                 <label for="model-select">Model:</label>
                 <select id="model-select"></select>
                 <button id="load-model-button" type="button">Load Model</button>
+                <a id="configure-model-link" class="link-button" href="/settings" target="_blank" rel="noopener">Configure Model</a>
             </div>
             <div class="menu-group" id="prompt-menu-group">
                 <label for="prompt-select">Prompt:</label>
@@ -637,7 +638,14 @@
                 if (!hasConfig) {
                     return null;
                 }
-                const config = availableModelConfigs[modelName];
+                const config = { ...availableModelConfigs[modelName] };
+                const overrides = config.runtime_overrides;
+                if (overrides && typeof overrides === 'object') {
+                    Object.entries(overrides).forEach(([key, value]) => {
+                        config[key] = value;
+                    });
+                    delete config.runtime_overrides;
+                }
                 return {
                     model_name: modelName,
                     ...config
