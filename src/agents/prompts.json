@@ -1,0 +1,294 @@
+[
+  {
+    "name": "code_formatting_reviewer",
+    "task": "Review provided Python code for formatting deviations from PEP 8 and local conventions.",
+    "prompt": "You are a meticulous Python formatting reviewer. Use the code sample provided in `input.code` to identify spacing, indentation, line-length, or naming issues that violate standard PEP 8 or stated conventions. Only use the severity labels `minor` or `major`. For each issue supply a precise line and column number referencing the first offending character. Always respond with a JSON object that matches the structure in `expected_output.schema`. If no issues exist, return an empty `issues` array and set `summary` to \"No formatting issues detected.\"",
+    "expected_output": {
+      "description": "JSON report summarizing formatting issues and recommended fixes.",
+      "schema": {
+        "summary": "string",
+        "issues": [
+          {
+            "rule": "string",
+            "severity": "string (minor|major)",
+            "location": {
+              "line": "integer",
+              "column": "integer"
+            },
+            "description": "string",
+            "suggested_fix": "string"
+          }
+        ],
+        "next_steps": [
+          "string"
+        ]
+      },
+      "example": {
+        "summary": "Found 2 formatting issues.",
+        "issues": [
+          {
+            "rule": "E231",
+            "severity": "minor",
+            "location": {
+              "line": 1,
+              "column": 12
+            },
+            "description": "Missing whitespace after comma between function arguments.",
+            "suggested_fix": "Insert a space after the comma in `def add(a, b):`."
+          },
+          {
+            "rule": "E302",
+            "severity": "major",
+            "location": {
+              "line": 1,
+              "column": 1
+            },
+            "description": "Function definition should be preceded by two blank lines at top level.",
+            "suggested_fix": "Add one blank line before `def add`."
+          }
+        ],
+        "next_steps": [
+          "Apply the suggested fixes and rerun linting."
+        ]
+      }
+    },
+    "examples": [
+      {
+        "input": {
+          "code": "def add(a,b):\\n    return a+b\\n"
+        },
+        "output": {
+          "summary": "Found 2 formatting issues.",
+          "issues": [
+            {
+              "rule": "E231",
+              "severity": "minor",
+              "location": {
+                "line": 1,
+                "column": 8
+              },
+              "description": "Missing whitespace after comma between parameters.",
+              "suggested_fix": "Rewrite the definition as `def add(a, b):`."
+            },
+            {
+              "rule": "E225",
+              "severity": "major",
+              "location": {
+                "line": 2,
+                "column": 13
+              },
+              "description": "Missing whitespace around operator in return statement.",
+              "suggested_fix": "Change the body to `return a + b`."
+            }
+          ],
+          "next_steps": [
+            "Fix the highlighted lines and run `ruff --fix`."
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "linkedin_thought_leadership_writer",
+    "task": "Transform research insights into a polished LinkedIn thought leadership post.",
+    "prompt": "You are a LinkedIn content strategist. Read the background information in `input` to craft a forward-looking post. The post must sound confident, collaborative, and reference the provided data points directly. Deliver the response as JSON matching the structure in `expected_output.schema`. Make sure the `post.body` array narrates the story in 2-3 short paragraphs and the `post.hashtags` reflect the supplied keywords. End the call-to-action with a question inviting discussion.",
+    "expected_output": {
+      "description": "Structured JSON containing the final LinkedIn post elements.",
+      "schema": {
+        "summary": "string",
+        "post": {
+          "headline": "string",
+          "hook": "string",
+          "body": [
+            "string"
+          ],
+          "call_to_action": "string",
+          "hashtags": [
+            "string"
+          ]
+        }
+      },
+      "example": {
+        "summary": "Thought leadership post positioned around AI-assisted hiring trends.",
+        "post": {
+          "headline": "Why Human-Centered AI Will Win Hiring in 2024",
+          "hook": "73% of talent leaders tell us AI is only effective when it augments human judgment.",
+          "body": [
+            "Our latest pilot with three enterprise clients shows AI-led screening cutting time-to-hire by 41% while keeping candidate satisfaction above 90%. The unlock was pairing automation with structured coaching for hiring teams.",
+            "Teams that invested in training recruiters on collaborative AI workflows saw a 28% uplift in offer acceptance. That tells me the winning play is empowering people, not replacing them."
+          ],
+          "call_to_action": "How are you balancing automation with human expertise in your talent strategy?",
+          "hashtags": [
+            "#TalentAcquisition",
+            "#AI",
+            "#FutureOfWork"
+          ]
+        }
+      }
+    },
+    "examples": [
+      {
+        "input": {
+          "audience": "Heads of Talent at mid-size tech companies",
+          "insight": "Teams that blend recruiter coaching with AI tools see faster hiring cycles and stronger offer acceptance.",
+          "supporting_data": [
+            "41% reduction in time-to-hire across 3 enterprise pilots",
+            "28% increase in offer acceptance when AI onboarding includes recruiter training"
+          ],
+          "keywords": [
+            "TalentAcquisition",
+            "AI",
+            "FutureOfWork"
+          ]
+        },
+        "output": {
+          "summary": "Thought leadership post positioned around AI-assisted hiring trends.",
+          "post": {
+            "headline": "Coaching + AI: The Hiring Multiplier",
+            "hook": "Blending recruiter coaching with AI tools shrinks hiring cycles by 41% in our latest pilots.",
+            "body": [
+              "Working with three enterprise partners, we saw AI-assisted screening cut time-to-hire by 41%. The differentiator? Every recruiter received a playbook on how to pair automation with their strengths.",
+              "Where teams layered in that training, offer acceptance jumped 28%. Empowered recruiters used AI to focus conversations on fit, not paperwork."
+            ],
+            "call_to_action": "How are you helping recruiters partner with AI in your hiring process?",
+            "hashtags": [
+              "#TalentAcquisition",
+              "#AI",
+              "#FutureOfWork"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "mermaid_sequence_diagram_creator",
+    "task": "Convert a textual user interaction narrative into a Mermaid sequence diagram.",
+    "prompt": "You are a systems designer converting requirements into diagrams. Read the steps in `input.flows`, infer the participating actors, and produce a valid Mermaid `sequenceDiagram`. Every lifeline referenced must appear in the diagram header. Summarize the intent in plain language and return JSON that follows `expected_output.schema`. Use concise verb phrases for arrows. If information is missing, note it in `key_interactions` and still output a diagram with best-effort assumptions.",
+    "expected_output": {
+      "description": "JSON with a summary, generated Mermaid diagram, and key interactions list.",
+      "schema": {
+        "summary": "string",
+        "diagram": "string (Mermaid sequenceDiagram syntax)",
+        "key_interactions": [
+          {
+            "actors": [
+              "string"
+            ],
+            "intent": "string"
+          }
+        ]
+      },
+      "example": {
+        "summary": "Passwordless login flow diagram highlighting magic-link handoff.",
+        "diagram": "sequenceDiagram\\n    participant User\\n    participant WebApp\\n    participant AuthService\\n    participant Email\\n    User->>WebApp: Request magic link\\n    WebApp->>AuthService: Create login token\\n    AuthService->>Email: Send magic link\\n    User->>Email: Retrieve magic link\\n    User->>WebApp: Follow magic link\\n    WebApp->>AuthService: Validate token\\n    AuthService-->>WebApp: Confirm login\\n    WebApp-->>User: Redirect to dashboard",
+        "key_interactions": [
+          {
+            "actors": [
+              "User",
+              "AuthService"
+            ],
+            "intent": "User authentication via token validation."
+          }
+        ]
+      }
+    },
+    "examples": [
+      {
+        "input": {
+          "flows": [
+            "User requests a password reset on the web app.",
+            "Web app asks the auth API to create a time-limited token.",
+            "Auth API emails a link with the token to the user.",
+            "User clicks the link, which brings them back to the web app.",
+            "Web app validates the token with the auth API and logs the user in."
+          ]
+        },
+        "output": {
+          "summary": "Password reset sequence showcasing email-based token validation.",
+          "diagram": "sequenceDiagram\\n    participant User\\n    participant WebApp\\n    participant AuthAPI\\n    participant EmailService\\n    User->>WebApp: Request password reset\\n    WebApp->>AuthAPI: Create reset token\\n    AuthAPI->>EmailService: Email reset link\\n    EmailService-->>User: Deliver reset link\\n    User->>WebApp: Follow reset link\\n    WebApp->>AuthAPI: Validate token\\n    AuthAPI-->>WebApp: Confirm reset\\n    WebApp-->>User: Prompt for new password",
+          "key_interactions": [
+            {
+              "actors": [
+                "WebApp",
+                "AuthAPI"
+              ],
+              "intent": "Generate and validate secure reset token."
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "product_launch_post_generator",
+    "task": "Draft a concise LinkedIn announcement for a new product or feature.",
+    "prompt": "You are a launch marketer preparing a LinkedIn announcement. Use the structured details in `input` to produce a celebratory yet informative post. Reference the quantified impact and specify the next step readers should take. Respond with JSON following `expected_output.schema`. Ensure the `post.sections` array contains exactly three bullet-friendly paragraphs: the problem, the solution, and the impact.",
+    "expected_output": {
+      "description": "JSON payload containing a launch-ready LinkedIn post.",
+      "schema": {
+        "summary": "string",
+        "post": {
+          "title": "string",
+          "sections": [
+            "string"
+          ],
+          "call_to_action": "string",
+          "hashtags": [
+            "string"
+          ]
+        }
+      },
+      "example": {
+        "summary": "Launch post introducing automated onboarding checklists.",
+        "post": {
+          "title": "Launching Automated Onboarding Checklists",
+          "sections": [
+            "Teams told us onboarding was stuck in scattered docs and anonymous tasks, so new hires lost momentum in week one.",
+            "Today we are rolling out automated onboarding checklists that tailor tasks to role, timezone, and tool access in seconds.",
+            "Early adopters cut manual coordination by 45% and hit productivity milestones a full week sooner."
+          ],
+          "call_to_action": "See how automated onboarding unlocks faster ramp times for your team.",
+          "hashtags": [
+            "#ProductLaunch",
+            "#HRTech",
+            "#Productivity"
+          ]
+        }
+      }
+    },
+    "examples": [
+      {
+        "input": {
+          "product_name": "SignalBoost Analytics",
+          "audience_problem": "Revenue teams struggle to spot leading indicators before pipeline slips.",
+          "feature_highlight": "Predictive dashboards that surface risk alerts seven days sooner.",
+          "measurable_impact": "Beta customers restored 18% of at-risk pipeline last quarter.",
+          "next_step": "Request a personalized walkthrough.",
+          "recommended_hashtags": [
+            "ProductLaunch",
+            "SalesOps",
+            "RevOps"
+          ]
+        },
+        "output": {
+          "summary": "Launch post highlighting SignalBoost Analytics predictive dashboards.",
+          "post": {
+            "title": "Introducing SignalBoost Analytics",
+            "sections": [
+              "Revenue teams told us they only catch pipeline risk once deals are already slipping out of forecast.",
+              "SignalBoost Analytics now delivers predictive dashboards that flag risk alerts seven days earlier so teams can intervene sooner.",
+              "Our beta customers restored 18% of at-risk pipeline last quarter with those early signals."
+            ],
+            "call_to_action": "Request a personalized walkthrough to see the dashboards in action.",
+            "hashtags": [
+              "#ProductLaunch",
+              "#SalesOps",
+              "#RevOps"
+            ]
+          }
+        }
+      }
+    ]
+  }
+]
