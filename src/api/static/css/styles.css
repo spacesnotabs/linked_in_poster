@@ -322,6 +322,19 @@ code {
     flex-direction: column;
 }
 
+@media (max-width: 1200px) {
+    #main-content {
+        flex-direction: column;
+    }
+
+    #model-info-panel {
+        width: 100%;
+        max-width: none;
+        border-left: none;
+        border-top: 1px solid #e0e0e0;
+    }
+}
+
 @media (max-width: 900px) {
     #app-container {
         flex-direction: column;
@@ -366,15 +379,6 @@ code {
         gap: 10px;
     }
 
-    #main-content {
-        flex-direction: column;
-    }
-
-    #model-info-panel {
-        width: 100%;
-        border-left: none;
-        border-top: 1px solid #e0e0e0;
-    }
 }
 
 #prompt-input {
