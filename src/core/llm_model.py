@@ -211,21 +211,51 @@ class LlmModel:
         return text or "", response, elapsed
 
     def estimate_tokens(self, text: str) -> int:
+        """Estimate the number of tokens in a given text using the model's tokenizer."""
         if not text:
             return 0
 
         tokenizer = getattr(self, "_model", None)
         if tokenizer and hasattr(tokenizer, "tokenize"):
             try:
-                tokens = tokenizer.tokenize(text.encode("utf-8"), add_bos=False)
+                tokens = tokenizer.tokenize(text.encode("utf-8"), add_bos=False, special=False)
                 return len(tokens)
             except TypeError:
                 tokens = tokenizer.tokenize(text.encode("utf-8"))
                 return len(tokens)
             except Exception:
-                pass
+                return 0
+    
+    def tokenize_text(self, text: str) -> list[int]:
+        """Tokenize the given text and return a list of token IDs."""
+        if not text:
+            return []
 
-        return len(text.split())
+        tokenizer = getattr(self, "_model", None)
+        if tokenizer and hasattr(tokenizer, "tokenize"):
+            try:
+                tokens = tokenizer.tokenize(text.encode("utf-8"), add_bos=False, special=False)
+                return tokens
+            except TypeError:
+                tokens = tokenizer.tokenize(text.encode("utf-8"))
+                return tokens
+            except Exception:
+                return []
+        return []
+
+    def detokenize_ids(self, token_ids: list[int]) -> str:
+        """Convert a list of token IDs back into a string."""
+        if not token_ids:
+            return ""
+
+        tokenizer = getattr(self, "_model", None)
+        if tokenizer and hasattr(tokenizer, "detokenize"):
+            try:
+                text = tokenizer.detokenize(token_ids)
+                return text.decode("utf-8") if isinstance(text, (bytes, bytearray)) else str(text)
+            except Exception:
+                return ""
+        return ""
 
     def build_usage_metrics(
         self,
@@ -236,6 +266,7 @@ class LlmModel:
         response_seconds: float,
         raw_response: dict[str, Any],
     ) -> UsageMetrics:
+        """Construct a UsageMetrics object from the raw response and provided data."""
         usage_block = raw_response.get("usage") or raw_response.get("token_usage") or {}
 
         prompt_tokens = usage_block.get("prompt_tokens") if isinstance(usage_block, dict) else None
