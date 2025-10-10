@@ -54,6 +54,7 @@ def code_aware_split(text: str, language: str,
     return out
 
 def build_chunks(repo_dir: str) -> List[DocChunk]:
+    """Build code-aware chunks from all files in a repository directory."""
     chunks: List[DocChunk] = []
     for path in iter_files(repo_dir):
         txt = read_text(path)

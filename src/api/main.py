@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from src.config import MODELS_CONFIG, MODEL_NAMES, SYSTEM_PROMPT
-from src.core.controller import LLMController
+from core.llm_controller import LLMController
 from src.core.llm_model import LlmModel, UsageMetrics
 from src.utils.utils import read_file
 from src.api.schemas import (

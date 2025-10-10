@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from src.config import MODELS_CONFIG, MODEL_NAMES, SYSTEM_PROMPT
-from src.core.controller import LLMController
+from core.llm_controller import LLMController
 
 
 def select_model_menu() -> str:
