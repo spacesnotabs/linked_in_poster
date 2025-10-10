@@ -12,15 +12,14 @@ class Document:
     text: str                # cleaned text (for code: the code as text)
     metadata: dict           # anything useful (repo, commit, url anchor, section)
 
-# Retrieval unit stored in the index
 @dataclass
-class Chunk:
-    chunk_id: str            # stable id (doc_id + offsets)
-    doc_id: str
+class DocChunk:
+    id: str
     text: str
-    start: int               # char (or token) offset in original text
-    end: int
-    metadata: dict           # section heading, function name, language, url, etc.
+    path: str
+    start_line: int
+    end_line: int
+    language: str
 
 # --- token length estimator (works offline, decent for chunk sizing) ---
 _word_re = re.compile(r"\w+")
