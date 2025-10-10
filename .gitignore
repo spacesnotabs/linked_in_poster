@@ -15,3 +15,9 @@ model_config.json
 .venv
 venv/
 env/
+
+# other
+src/chats/
+models/
+db/
+data/
