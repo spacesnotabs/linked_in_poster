@@ -21,3 +21,4 @@ src/chats/
 models/
 db/
 data/
+*.code-workspace
