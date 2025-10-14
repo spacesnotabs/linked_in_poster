@@ -14,9 +14,9 @@ from fastapi.templating import Jinja2Templates
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from src.config import MODELS_CONFIG, MODEL_NAMES, SYSTEM_PROMPT
-from core.llm_controller import LLMController
+from src.core.llm_controller import LLMController
 from src.core.llm_model import LlmModel, UsageMetrics
-from src.utils.utils import read_file
+from src.utils.utils import read_text
 from src.api.schemas import (
     ChatRequest,
     ChatResponse,
@@ -337,7 +337,7 @@ async def create_upload_file(file: UploadFile = File(...)):
         with os.fdopen(fd, "wb") as temp_file:
             temp_file.write(data)
 
-        file_content = read_file(temp_path)
+        file_content = read_text(temp_path)
     except (UnicodeDecodeError, ValueError) as exc:
         return JSONResponse(
             {"error": f"Could not read file: {exc}"},
