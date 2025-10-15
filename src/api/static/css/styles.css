@@ -9,11 +9,12 @@ body {
 }
 
 #app-container {
-    width: clamp(320px, 90vw, 1400px);
+    width: min(100%, calc(100vw - 2rem));
+    min-width: min(320px, calc(100vw - 2rem));
     height: 100%;
     margin: 0 auto;
     display: grid;
-    grid-template-columns: minmax(160px, 240px) minmax(0, 1fr);
+    grid-template-columns: clamp(180px, 22vw, 280px) minmax(0, 1fr);
     grid-template-rows: 1fr;
     background: #fff;
     border-radius: 8px;
@@ -245,7 +246,7 @@ code {
 
 #main-content {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+    grid-template-columns: minmax(0, 1fr) clamp(200px, 24vw, 340px);
     overflow: hidden;
     min-width: 0;
     height: 100%;
