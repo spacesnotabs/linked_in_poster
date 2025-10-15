@@ -37,6 +37,7 @@ class LLMConfig:
     n_context_size: int
     n_threads: int
     n_threads_batch: int
+    temperature: float
     verbose: bool
     use_mmap: bool
     logits_all: bool
@@ -89,6 +90,7 @@ class LlmModel:
             n_context_size=context_size,
             n_threads=_n_threads,
             n_threads_batch=_n_threads_batch,
+            temperature=0.7,
             verbose=False,
             use_mmap=True,
             logits_all=False,
@@ -116,6 +118,7 @@ class LlmModel:
             return
 
         int_fields = {"context_size", "n_context_size", "n_threads", "n_threads_batch"}
+        float_fields = {"temperature"}
         bool_fields = {"verbose", "use_mmap", "logits_all"}
 
         for key, value in overrides.items():
@@ -125,6 +128,14 @@ class LlmModel:
                 try:
                     coerced = int(value)
                 except (TypeError, ValueError):
+                    continue
+                setattr(self._llm_config, key, coerced)
+            elif key in float_fields:
+                try:
+                    coerced = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if not (0 <= coerced <= 2):
                     continue
                 setattr(self._llm_config, key, coerced)
             elif key in bool_fields:
@@ -185,7 +196,7 @@ class LlmModel:
         messages: list[dict[str, str]],
         *,
         max_tokens: int = 1024,
-        temperature: float = 0.7,
+        temperature: Optional[float] = None,
         top_p: float = 0.9,
         top_k: int = 50,
         stream: bool = False,
@@ -193,10 +204,16 @@ class LlmModel:
     ) -> tuple[str, dict[str, Any], float]:
         """Execute a chat completion and return text, raw response, and latency."""
 
+        effective_temp = (
+            float(temperature)
+            if temperature is not None
+            else getattr(self._llm_config, "temperature", 0.7)
+        )
+
         params = {
             "messages": messages,
             "max_tokens": max_tokens,
-            "temperature": temperature,
+            "temperature": effective_temp,
             "top_p": top_p,
             "top_k": top_k,
             "stream": stream,

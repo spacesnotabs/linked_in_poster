@@ -589,6 +589,7 @@ class LLMController:
             "n_context_size": 32768,
             "n_threads": cpu_threads,
             "n_threads_batch": max(cpu_threads // 2, 1),
+            "temperature": 0.7,
             "verbose": False,
             "use_mmap": True,
             "logits_all": False,
@@ -600,11 +601,13 @@ class LLMController:
             "n_context_size",
             "n_threads",
             "n_threads_batch",
+            "temperature",
             "verbose",
             "use_mmap",
             "logits_all",
         }
         int_fields = {"context_size", "n_context_size", "n_threads", "n_threads_batch"}
+        float_fields = {"temperature"}
         bool_fields = {"verbose", "use_mmap", "logits_all"}
 
         sanitized: dict[str, Any] = {}
@@ -619,6 +622,14 @@ class LLMController:
                     sanitized[key] = int(value)
                 except (TypeError, ValueError):
                     continue
+            elif key in float_fields:
+                try:
+                    coerced = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if not (0 <= coerced <= 2):
+                    continue
+                sanitized[key] = coerced
             elif key in bool_fields:
                 sanitized[key] = self._coerce_bool(value)
 

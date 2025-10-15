@@ -26,10 +26,10 @@ class PromptApplyRequest(BaseModel):
 
 class ModelSettingsPayload(BaseModel):
     model_name: str
-    context_size: int
     n_context_size: int
     n_threads: int
     n_threads_batch: int
+    temperature: float
     verbose: bool
     use_mmap: bool
     logits_all: bool

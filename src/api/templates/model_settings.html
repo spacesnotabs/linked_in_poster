@@ -27,45 +27,45 @@
 
                 <div class="settings-grid">
                     <div class="settings-field">
-                        <label for="context_size">Context Size</label>
-                        <input type="number" id="context_size" name="context_size" min="1" step="1" required>
-                        <small>Base context window used for model instantiation.</small>
-                    </div>
-
-                    <div class="settings-field">
                         <label for="n_context_size">n_context_size</label>
                         <input type="number" id="n_context_size" name="n_context_size" min="1" step="1" required>
-                        <small>Raw n_ctx value passed to llama.cpp.</small>
+                        <small>Total context window (tokens) forwarded to llama.cpp (matches the model's n_ctx).</small>
                     </div>
 
                     <div class="settings-field">
                         <label for="n_threads">n_threads</label>
                         <input type="number" id="n_threads" name="n_threads" min="1" step="1" required>
-                        <small>Number of CPU threads used for generation.</small>
+                        <small>CPU threads allocated for generation; align with available physical cores for best throughput.</small>
                     </div>
 
                     <div class="settings-field">
                         <label for="n_threads_batch">n_threads_batch</label>
                         <input type="number" id="n_threads_batch" name="n_threads_batch" min="1" step="1" required>
-                        <small>Threads allocated when processing batched tokens.</small>
+                        <small>Threads used during batched token processing; keep below n_threads if you see instability.</small>
+                    </div>
+
+                    <div class="settings-field">
+                        <label for="temperature">Temperature</label>
+                        <input type="number" id="temperature" name="temperature" min="0" max="2" step="0.01" required>
+                        <small>Sampling temperature between 0 (deterministic) and 2 (creative) to balance randomness.</small>
                     </div>
 
                     <div class="settings-field settings-checkbox">
                         <input type="checkbox" id="verbose" name="verbose">
                         <label for="verbose">Verbose logging</label>
-                        <small>Emit llama.cpp debug output while generating.</small>
+                        <small>Stream llama.cpp debug logs to the console during generation for troubleshooting.</small>
                     </div>
 
                     <div class="settings-field settings-checkbox">
                         <input type="checkbox" id="use_mmap" name="use_mmap">
                         <label for="use_mmap">Memory map model</label>
-                        <small>Use memory mapping when loading weights (faster start-up).</small>
+                        <small>Memory-map the model weights to speed up loads and reduce duplicate RAM usage.</small>
                     </div>
 
                     <div class="settings-field settings-checkbox">
                         <input type="checkbox" id="logits_all" name="logits_all">
                         <label for="logits_all">Return logits for all tokens</label>
-                        <small>Enable logits for every generated token (higher memory usage).</small>
+                        <small>Include logits for every generated token so downstream tooling can inspect raw scores.</small>
                     </div>
                 </div>
 
@@ -89,16 +89,17 @@
             const saveButton = document.getElementById('save-button');
 
             const fieldElements = {
-                context_size: document.getElementById('context_size'),
                 n_context_size: document.getElementById('n_context_size'),
                 n_threads: document.getElementById('n_threads'),
                 n_threads_batch: document.getElementById('n_threads_batch'),
+                temperature: document.getElementById('temperature'),
                 verbose: document.getElementById('verbose'),
                 use_mmap: document.getElementById('use_mmap'),
                 logits_all: document.getElementById('logits_all'),
             };
 
-            const numericFields = ['context_size', 'n_context_size', 'n_threads', 'n_threads_batch'];
+            const integerFields = ['n_context_size', 'n_threads', 'n_threads_batch'];
+            const floatFields = ['temperature'];
             let availableModels = [];
             let currentModel = null;
             let isSaving = false;
@@ -196,12 +197,23 @@
                 }
 
                 const payload = { model_name: modelSelect.value };
-                for (const key of numericFields) {
+                for (const key of integerFields) {
                     const numericValue = Number(fieldElements[key].value);
                     if (!Number.isFinite(numericValue) || numericValue <= 0) {
                         throw new Error(`Enter a positive number for ${formatLabel(key)}.`);
                     }
                     payload[key] = Math.floor(numericValue);
+                }
+
+                for (const key of floatFields) {
+                    const numericValue = Number.parseFloat(fieldElements[key].value);
+                    if (!Number.isFinite(numericValue)) {
+                        throw new Error(`Enter a number for ${formatLabel(key)}.`);
+                    }
+                    if (numericValue < 0 || numericValue > 2) {
+                        throw new Error(`${formatLabel(key)} must be between 0 and 2.`);
+                    }
+                    payload[key] = numericValue;
                 }
 
                 payload.verbose = Boolean(fieldElements.verbose.checked);
