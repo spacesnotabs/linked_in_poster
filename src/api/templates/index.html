@@ -634,22 +634,11 @@
                 if (!modelName) {
                     return null;
                 }
-                const hasConfig = availableModelConfigs && Object.prototype.hasOwnProperty.call(availableModelConfigs, modelName);
-                if (!hasConfig) {
+                const config = availableModelConfigs?.[modelName];
+                if (!config) {
                     return null;
                 }
-                const config = { ...availableModelConfigs[modelName] };
-                const overrides = config.runtime_overrides;
-                if (overrides && typeof overrides === 'object') {
-                    Object.entries(overrides).forEach(([key, value]) => {
-                        config[key] = value;
-                    });
-                    delete config.runtime_overrides;
-                }
-                return {
-                    model_name: modelName,
-                    ...config
-                };
+                return { ...config };
             }
 
             function setLoadingState(isLoading) {
@@ -855,6 +844,7 @@
                     'n_context_size',
                     'n_threads',
                     'n_threads_batch',
+                    'temperature',
                     'verbose',
                     'use_mmap',
                     'logits_all'
@@ -905,8 +895,21 @@
             }
 
             function formatConfigValue(value) {
+                if (value === undefined || value === null) {
+                    return '--';
+                }
                 if (typeof value === 'boolean') {
                     return value ? 'Yes' : 'No';
+                }
+                if (typeof value === 'number') {
+                    return Number(value).toLocaleString();
+                }
+                if (typeof value === 'object') {
+                    try {
+                        return JSON.stringify(value);
+                    } catch (_error) {
+                        return String(value);
+                    }
                 }
                 return String(value);
             }

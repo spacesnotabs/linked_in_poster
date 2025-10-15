@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 # Add project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from src.config import MODELS_CONFIG, MODEL_NAMES, SYSTEM_PROMPT
+from src.config import MODEL_NAMES, SYSTEM_PROMPT
 from src.core.llm_controller import LLMController
 from src.core.llm_model import LlmModel, UsageMetrics
 from src.utils.utils import read_text
@@ -101,13 +101,11 @@ async def render_settings_page(request: Request):
 async def get_models():
     """Return available model names and the currently selected model."""
     active_model_id, _ = _get_active_state()
-    current_model_config = None
-    if active_model_id:
-        current_model_config = llm_controller.get_model(active_model_id).get_model_config()
+    current_model_config = llm_controller.describe_model_config(active_model_id) if active_model_id else None
     controller_state = llm_controller.get_state()
     return {
         "models": MODEL_NAMES,
-        "models_config": MODELS_CONFIG,
+        "models_config": llm_controller.describe_all_models(),
         "selected_model": selected_model_name,
         "current_model_config": current_model_config,
         "is_model_loaded": bool(controller_state.get("loaded_models")),
@@ -206,7 +204,7 @@ def _load_model(model_name: str) -> JSONResponse:
     _, model_state = _get_active_state()
     return JSONResponse({
         "message": f"Loaded model: {model_instance.model_name}",
-        "model_config": model_instance.get_model_config(),
+        "model_config": llm_controller.describe_model_config(model_instance.model_name),
         "session_cleared": True,
         "controller_state": llm_controller.get_state(),
         "usage": model_state.get("usage") if model_state else None,

@@ -278,6 +278,27 @@ class LLMController:
 
         return self._sanitize_runtime_overrides(values)
 
+    def describe_model_config(self, model_id: str) -> dict[str, Any]:
+        base_config = copy.deepcopy(self._models_config.get(model_id) or {})
+        descriptor: dict[str, Any] = {"model_name": model_id}
+        base_config.pop("runtime_overrides", None)
+        for key, value in base_config.items():
+            if isinstance(value, (dict, list)):
+                descriptor[key] = copy.deepcopy(value)
+            else:
+                descriptor[key] = value
+
+        effective_runtime = self.get_effective_runtime_config(model_id)
+        descriptor.update(effective_runtime)
+
+        return descriptor
+
+    def describe_all_models(self) -> dict[str, dict[str, Any]]:
+        return {
+            model_id: self.describe_model_config(model_id)
+            for model_id in self.available_models
+        }
+
     def get_state(self) -> dict[str, Any]:
         models_state: dict[str, Any] = {}
         for model_id, model in self._active_models.items():
