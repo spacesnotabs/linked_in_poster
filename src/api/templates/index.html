@@ -10,6 +10,15 @@
 </head>
 <body>
     <div id="app-container">
+        <button
+            id="sidebar-toggle"
+            type="button"
+            aria-controls="side-menu"
+            aria-expanded="true"
+            aria-label="Collapse sidebar"
+            data-collapse-label="<<"
+            data-expand-label=">>"
+        ></button>
         <div id="side-menu">
             <div class="menu-group">
                 <label for="model-select">Model:</label>
@@ -41,6 +50,16 @@
                 <button id="clear-history" type="button">Clear History</button>
             </div>
         </div>
+        <div
+            id="side-menu-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-controls="main-content"
+            aria-valuemin="180"
+            aria-valuemax="360"
+            aria-valuenow="180"
+            tabindex="0"
+        ></div>
 
         <div id="main-content">
             <div id="chat-panel">
@@ -131,6 +150,10 @@
             const uploadForm = document.getElementById('upload-form');
             const fileInput = document.getElementById('file-input');
             const modelConfigContainer = document.getElementById('model-config-content');
+            const appContainer = document.getElementById('app-container');
+            const sideMenu = document.getElementById('side-menu');
+            const sideMenuResizer = document.getElementById('side-menu-resizer');
+            const sidebarToggle = document.getElementById('sidebar-toggle');
             const dashboardElements = {
                 lastPrompt: document.getElementById('dashboard-last-prompt'),
                 lastContext: document.getElementById('dashboard-last-context'),
@@ -169,6 +192,293 @@
                 return false;
             }
 
+            function initializeSidebarControls() {
+                if (!appContainer || !sideMenu || !sideMenuResizer || !sidebarToggle) {
+                    return;
+                }
+
+                const measuredWidth = Math.round(sideMenu.getBoundingClientRect().width);
+                if (Number.isFinite(measuredWidth) && measuredWidth > 0) {
+                    lastExpandedSidebarWidth = measuredWidth;
+                }
+
+                const storedWidth = readStoredNumber(SIDEBAR_WIDTH_KEY);
+                if (Number.isFinite(storedWidth) && storedWidth > 0) {
+                    const appliedWidth = applySidebarWidth(storedWidth, { persist: false });
+                    if (Number.isFinite(appliedWidth) && appliedWidth > 0) {
+                        lastExpandedSidebarWidth = appliedWidth;
+                    }
+                } else if (Number.isFinite(measuredWidth) && measuredWidth > 0) {
+                    updateResizerAria(measuredWidth);
+                } else {
+                    lastExpandedSidebarWidth = SIDEBAR_CONFIG.minWidth;
+                    updateResizerAria(SIDEBAR_CONFIG.minWidth);
+                }
+
+                if (!Number.isFinite(lastExpandedSidebarWidth) || lastExpandedSidebarWidth <= 0) {
+                    lastExpandedSidebarWidth = SIDEBAR_CONFIG.minWidth;
+                }
+
+                const storedCollapsed = readStoredBoolean(SIDEBAR_COLLAPSED_KEY);
+                if (storedCollapsed === true) {
+                    setSidebarCollapsed(true, { force: true, persist: false });
+                } else {
+                    setSidebarCollapsed(false, { force: true, persist: false });
+                }
+
+                sidebarToggle.addEventListener('click', handleSidebarToggle);
+                sideMenuResizer.addEventListener('mousedown', startSidebarDrag);
+                sideMenuResizer.addEventListener('touchstart', startSidebarDrag, SIDEBAR_TOUCH_OPTIONS);
+                sideMenuResizer.addEventListener('keydown', handleResizerKeyDown);
+
+                window.addEventListener('resize', handleSidebarResizeClamp);
+            }
+
+            function handleSidebarToggle() {
+                const shouldCollapse = !appContainer.classList.contains('collapsed');
+                setSidebarCollapsed(shouldCollapse);
+            }
+
+            function setSidebarCollapsed(collapsed, options = {}) {
+                if (!appContainer || !sidebarToggle) {
+                    return;
+                }
+
+                const targetState = Boolean(collapsed);
+                const currentlyCollapsed = appContainer.classList.contains('collapsed');
+                const shouldPersist = options.persist !== false;
+                const forceChange = Boolean(options.force);
+
+                if (targetState && !currentlyCollapsed) {
+                    lastExpandedSidebarWidth = getCurrentSidebarWidth();
+                }
+
+                if (forceChange || targetState !== currentlyCollapsed) {
+                    appContainer.classList.toggle('collapsed', targetState);
+                    if (!targetState) {
+                        const desiredWidth = options.restoreWidth ?? lastExpandedSidebarWidth ?? readStoredNumber(SIDEBAR_WIDTH_KEY);
+                        if (Number.isFinite(desiredWidth) && desiredWidth > 0) {
+                            applySidebarWidth(desiredWidth, { persist: shouldPersist });
+                        }
+                    }
+                }
+
+                sidebarToggle.setAttribute('aria-expanded', String(!targetState));
+                sidebarToggle.setAttribute('aria-label', targetState ? 'Expand sidebar' : 'Collapse sidebar');
+                updateResizerAria(targetState ? (lastExpandedSidebarWidth ?? SIDEBAR_CONFIG.minWidth) : getCurrentSidebarWidth());
+                updateResizerInteractiveState(targetState);
+
+                if (shouldPersist) {
+                    persistSidebarCollapsed(targetState);
+                }
+            }
+
+            function startSidebarDrag(event) {
+                if (isSidebarDragging) {
+                    return;
+                }
+                if (appContainer.classList.contains('collapsed')) {
+                    return;
+                }
+                const clientX = getClientX(event);
+                if (clientX === null) {
+                    return;
+                }
+                event.preventDefault();
+                isSidebarDragging = true;
+                sidebarDragStartX = clientX;
+                sidebarDragStartWidth = getCurrentSidebarWidth();
+                document.body.classList.add('sidebar-resizing');
+                document.addEventListener('mousemove', handleSidebarDragMove);
+                document.addEventListener('mouseup', stopSidebarDrag);
+                document.addEventListener('touchmove', handleSidebarDragMove, SIDEBAR_TOUCH_OPTIONS);
+                document.addEventListener('touchend', stopSidebarDrag);
+                document.addEventListener('touchcancel', stopSidebarDrag);
+            }
+
+            function handleSidebarDragMove(event) {
+                if (!isSidebarDragging) {
+                    return;
+                }
+                const clientX = getClientX(event);
+                if (clientX === null) {
+                    return;
+                }
+                const delta = clientX - sidebarDragStartX;
+                const newWidth = sidebarDragStartWidth + delta;
+                applySidebarWidth(newWidth, { persist: false });
+                event.preventDefault();
+            }
+
+            function stopSidebarDrag() {
+                if (!isSidebarDragging) {
+                    return;
+                }
+                isSidebarDragging = false;
+                document.body.classList.remove('sidebar-resizing');
+                document.removeEventListener('mousemove', handleSidebarDragMove);
+                document.removeEventListener('mouseup', stopSidebarDrag);
+                document.removeEventListener('touchmove', handleSidebarDragMove, SIDEBAR_TOUCH_OPTIONS);
+                document.removeEventListener('touchend', stopSidebarDrag);
+                document.removeEventListener('touchcancel', stopSidebarDrag);
+                if (Number.isFinite(lastExpandedSidebarWidth) && lastExpandedSidebarWidth > 0) {
+                    persistSidebarWidth(lastExpandedSidebarWidth);
+                }
+            }
+
+            function handleResizerKeyDown(event) {
+                if (appContainer.classList.contains('collapsed')) {
+                    return;
+                }
+                let handled = false;
+                if (event.key === 'ArrowLeft') {
+                    applySidebarWidth(getCurrentSidebarWidth() - SIDEBAR_CONFIG.keyStep);
+                    handled = true;
+                } else if (event.key === 'ArrowRight') {
+                    applySidebarWidth(getCurrentSidebarWidth() + SIDEBAR_CONFIG.keyStep);
+                    handled = true;
+                } else if (event.key === 'Home') {
+                    applySidebarWidth(SIDEBAR_CONFIG.minWidth);
+                    handled = true;
+                } else if (event.key === 'End') {
+                    applySidebarWidth(SIDEBAR_CONFIG.maxWidth);
+                    handled = true;
+                }
+                if (handled) {
+                    event.preventDefault();
+                }
+            }
+
+            function handleSidebarResizeClamp() {
+                if (appContainer.classList.contains('collapsed')) {
+                    return;
+                }
+                const currentWidth = getCurrentSidebarWidth();
+                const clampedWidth = clampSidebarWidth(currentWidth);
+                if (clampedWidth !== currentWidth) {
+                    applySidebarWidth(clampedWidth);
+                }
+            }
+
+            function applySidebarWidth(width, options = {}) {
+                if (!appContainer) {
+                    return null;
+                }
+                const clampedWidth = clampSidebarWidth(width);
+                lastExpandedSidebarWidth = clampedWidth;
+                appContainer.style.setProperty('--side-menu-width', `${clampedWidth}px`);
+                updateResizerAria(clampedWidth);
+                if (options.persist !== false) {
+                    persistSidebarWidth(clampedWidth);
+                }
+                return clampedWidth;
+            }
+
+            function clampSidebarWidth(width) {
+                const min = SIDEBAR_CONFIG.minWidth;
+                const max = SIDEBAR_CONFIG.maxWidth;
+                const numericWidth = Number(width);
+                if (!Number.isFinite(numericWidth)) {
+                    return min;
+                }
+                return Math.min(Math.max(numericWidth, min), max);
+            }
+
+            function getCurrentSidebarWidth() {
+                const styleValue = appContainer ? appContainer.style.getPropertyValue('--side-menu-width') : '';
+                const inlineWidth = parseInt(styleValue, 10);
+                if (Number.isFinite(inlineWidth) && inlineWidth > 0) {
+                    return inlineWidth;
+                }
+                if (Number.isFinite(lastExpandedSidebarWidth) && lastExpandedSidebarWidth > 0) {
+                    return lastExpandedSidebarWidth;
+                }
+                if (sideMenu) {
+                    const measured = Math.round(sideMenu.getBoundingClientRect().width);
+                    if (Number.isFinite(measured) && measured > 0) {
+                        return measured;
+                    }
+                }
+                return SIDEBAR_CONFIG.minWidth;
+            }
+
+            function updateResizerAria(width) {
+                if (!sideMenuResizer) {
+                    return;
+                }
+                const clampedWidth = clampSidebarWidth(width);
+                sideMenuResizer.setAttribute('aria-valuenow', String(clampedWidth));
+                sideMenuResizer.setAttribute('aria-valuetext', `${clampedWidth} pixels`);
+            }
+
+            function updateResizerInteractiveState(collapsed) {
+                if (!sideMenuResizer) {
+                    return;
+                }
+                const isCollapsed = Boolean(collapsed);
+                sideMenuResizer.setAttribute('aria-hidden', isCollapsed ? 'true' : 'false');
+                sideMenuResizer.tabIndex = isCollapsed ? -1 : 0;
+            }
+
+            function getClientX(event) {
+                if (event.touches && event.touches.length > 0) {
+                    return event.touches[0].clientX;
+                }
+                if (event.changedTouches && event.changedTouches.length > 0) {
+                    return event.changedTouches[0].clientX;
+                }
+                if (typeof event.clientX === 'number') {
+                    return event.clientX;
+                }
+                return null;
+            }
+
+            function persistSidebarWidth(width) {
+                if (!Number.isFinite(width) || width <= 0) {
+                    return;
+                }
+                try {
+                    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(width)));
+                } catch (error) {
+                    console.warn('Unable to persist sidebar width:', error);
+                }
+            }
+
+            function persistSidebarCollapsed(collapsed) {
+                try {
+                    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
+                } catch (error) {
+                    console.warn('Unable to persist sidebar state:', error);
+                }
+            }
+
+            function readStoredNumber(key) {
+                try {
+                    const rawValue = localStorage.getItem(key);
+                    if (rawValue === null) {
+                        return null;
+                    }
+                    const parsed = parseInt(rawValue, 10);
+                    return Number.isFinite(parsed) ? parsed : null;
+                } catch (error) {
+                    console.warn('Unable to read stored number:', error);
+                    return null;
+                }
+            }
+
+            function readStoredBoolean(key) {
+                try {
+                    const rawValue = localStorage.getItem(key);
+                    if (rawValue === null) {
+                        return null;
+                    }
+                    return rawValue === '1';
+                } catch (error) {
+                    console.warn('Unable to read stored boolean:', error);
+                    return null;
+                }
+            }
+
             let currentModelConfig = null;
             let lastUsageData = null;
             let chatUsageData = null;
@@ -187,6 +497,23 @@
             let isPromptApplying = false;
             let isPromptPreviewLoading = false;
             const promptPreviewCache = new Map();
+
+            const SIDEBAR_CONFIG = {
+                minWidth: 180,
+                maxWidth: 360,
+                keyStep: 16,
+                storagePrefix: 'chat-ui.sidebar'
+            };
+            const SIDEBAR_WIDTH_KEY = `${SIDEBAR_CONFIG.storagePrefix}.width`;
+            const SIDEBAR_COLLAPSED_KEY = `${SIDEBAR_CONFIG.storagePrefix}.collapsed`;
+            const SIDEBAR_TOUCH_OPTIONS = { passive: false };
+
+            let isSidebarDragging = false;
+            let sidebarDragStartX = 0;
+            let sidebarDragStartWidth = 0;
+            let lastExpandedSidebarWidth = null;
+
+            initializeSidebarControls();
 
             updateModelConfig(null);
             updateDefaultStatus();
