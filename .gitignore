@@ -22,3 +22,4 @@ models/
 db/
 data/
 *.code-workspace
+chunks.sqlite3
