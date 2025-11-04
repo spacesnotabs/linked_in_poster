@@ -1,6 +1,5 @@
-from typing import Optional
+from typing import Optional, Union, Any, Iterable
 import pathlib
-from typing import Any, Iterable
 
 try:
     import fitz as _fitz  # PyMuPDF
@@ -58,11 +57,12 @@ def detect_lang(path: pathlib.Path) -> str:
     }
     return m.get(path.suffix.lower(), "text")
 
-def read_text(path: pathlib.Path) -> str:
+def read_text(path: Union[str, pathlib.Path]) -> str:
     """Read text content from a file, handling PDFs appropriately."""
     try:
-        if path.suffix.lower() == ".pdf":
-            return pdf_to_text(path)
-        return path.read_text(encoding="utf-8", errors="ignore")
+        path_obj = path if isinstance(path, pathlib.Path) else pathlib.Path(path)
+        if path_obj.suffix.lower() == ".pdf":
+            return pdf_to_text(path_obj)
+        return path_obj.read_text(encoding="utf-8", errors="ignore")
     except Exception:
         return ""
