@@ -133,6 +133,12 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
+            if (typeof marked !== 'undefined') {
+                marked.setOptions({
+                    gfm: true,
+                    breaks: true
+                });
+            }
             const modelSelect = document.getElementById('model-select');
             const clearButton = document.getElementById('clear-history');
             const chatContainer = document.getElementById('chat-container');

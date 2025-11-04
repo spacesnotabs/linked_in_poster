@@ -172,6 +172,13 @@ body.sidebar-resizing {
     transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+#side-menu #configure-model-link {
+    align-self: flex-start;
+    width: auto;
+    flex-grow: 0;
+    max-width: 100%;
+}
+
 #side-menu .link-button:hover {
     background-color: #dbe6ff;
     color: #052b6c;
@@ -227,6 +234,18 @@ body.sidebar-resizing {
     background-color: #e9ecef;
     color: #333;
     align-self: flex-start;
+}
+
+.assistant-message .message-content {
+    white-space: normal;
+}
+
+.assistant-message .message-content p {
+    margin: 0 0 0.75em;
+}
+
+.assistant-message .message-content p:last-child {
+    margin-bottom: 0;
 }
 
 .system-message {
