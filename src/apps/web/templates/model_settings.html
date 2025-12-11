@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Runtime Settings</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body class="settings-body theme-light">
+    <div class="background-glow"></div>
+    <main class="settings-container page-shell page-surface">
+        <header class="settings-header">
+            <h1>Model Runtime Settings</h1>
+            <p>
+                Configure the runtime parameters for your local models before loading them.
+                Changes are stored for this session and applied the next time you click <em>Load Model</em>.
+            </p>
+        </header>
+
+        <section class="settings-card">
+            <form id="model-settings-form" class="settings-form">
+                <div class="settings-row">
+                    <label for="model-select">Model</label>
+                    <select id="model-select" required>
+                        <option value="">Loading models...</option>
+                    </select>
+                </div>
+
+                <div class="settings-grid">
+                    <div class="settings-field">
+                        <label for="n_context_size">n_context_size</label>
+                        <input type="number" id="n_context_size" name="n_context_size" min="1" step="1" required>
+                        <small>Total context window (tokens) forwarded to llama.cpp (matches the model's n_ctx).</small>
+                    </div>
+
+                    <div class="settings-field">
+                        <label for="n_threads">n_threads</label>
+                        <input type="number" id="n_threads" name="n_threads" min="1" step="1" required>
+                        <small>CPU threads allocated for generation; align with available physical cores for best throughput.</small>
+                    </div>
+
+                    <div class="settings-field">
+                        <label for="n_threads_batch">n_threads_batch</label>
+                        <input type="number" id="n_threads_batch" name="n_threads_batch" min="1" step="1" required>
+                        <small>Threads used during batched token processing; keep below n_threads if you see instability.</small>
+                    </div>
+
+                    <div class="settings-field">
+                        <label for="temperature">Temperature</label>
+                        <input type="number" id="temperature" name="temperature" min="0" max="2" step="0.01" required>
+                        <small>Sampling temperature between 0 (deterministic) and 2 (creative) to balance randomness.</small>
+                    </div>
+
+                    <div class="settings-field settings-checkbox">
+                        <input type="checkbox" id="verbose" name="verbose">
+                        <label for="verbose">Verbose logging</label>
+                        <small>Stream llama.cpp debug logs to the console during generation for troubleshooting.</small>
+                    </div>
+
+                    <div class="settings-field settings-checkbox">
+                        <input type="checkbox" id="use_mmap" name="use_mmap">
+                        <label for="use_mmap">Memory map model</label>
+                        <small>Memory-map the model weights to speed up loads and reduce duplicate RAM usage.</small>
+                    </div>
+
+                    <div class="settings-field settings-checkbox">
+                        <input type="checkbox" id="logits_all" name="logits_all">
+                        <label for="logits_all">Return logits for all tokens</label>
+                        <small>Include logits for every generated token so downstream tooling can inspect raw scores.</small>
+                    </div>
+                </div>
+
+                <div id="reload-hint" class="settings-hint" aria-live="polite"></div>
+                <div id="status-message" class="settings-status" role="status"></div>
+
+                <div class="settings-actions">
+                    <button type="submit" id="save-button">Save Settings</button>
+                    <a href="/" class="secondary-link">Back to chat</a>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const modelSelect = document.getElementById('model-select');
+            const form = document.getElementById('model-settings-form');
+            const statusMessage = document.getElementById('status-message');
+            const reloadHint = document.getElementById('reload-hint');
+            const saveButton = document.getElementById('save-button');
+
+            const fieldElements = {
+                n_context_size: document.getElementById('n_context_size'),
+                n_threads: document.getElementById('n_threads'),
+                n_threads_batch: document.getElementById('n_threads_batch'),
+                temperature: document.getElementById('temperature'),
+                verbose: document.getElementById('verbose'),
+                use_mmap: document.getElementById('use_mmap'),
+                logits_all: document.getElementById('logits_all'),
+            };
+
+            const integerFields = ['n_context_size', 'n_threads', 'n_threads_batch'];
+            const floatFields = ['temperature'];
+            let availableModels = [];
+            let currentModel = null;
+            let isSaving = false;
+            const defaultSaveLabel = saveButton.textContent;
+
+            init();
+
+            async function init() {
+                try {
+                    await loadModels();
+                } catch (error) {
+                    disableForm(true);
+                    showStatus(error?.message || 'Failed to load models.', 'error');
+                }
+            }
+
+            async function loadModels() {
+                disableForm(true);
+                const response = await fetch('/api/models');
+                if (!response.ok) {
+                    throw new Error('Could not retrieve models.');
+                }
+                const data = await response.json();
+                availableModels = data?.models ?? [];
+
+                modelSelect.innerHTML = '';
+                if (!availableModels.length) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'No models configured';
+                    modelSelect.appendChild(option);
+                    throw new Error('No models configured. Update model_config.json to add entries.');
+                }
+
+                availableModels.forEach((name) => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    modelSelect.appendChild(option);
+                });
+
+                let preferred = currentModel;
+                if (!preferred || !availableModels.includes(preferred)) {
+                    if (data?.selected_model && availableModels.includes(data.selected_model)) {
+                        preferred = data.selected_model;
+                    } else {
+                        preferred = availableModels[0];
+                    }
+                }
+
+                currentModel = preferred;
+                modelSelect.value = preferred;
+                await loadSettings(preferred);
+                disableForm(false);
+            }
+
+            async function loadSettings(modelName) {
+                if (!modelName) {
+                    return;
+                }
+
+                disableForm(true);
+                try {
+                    const response = await fetch(`/api/model_settings?model_name=${encodeURIComponent(modelName)}`);
+                    const payload = await response.json();
+                    if (!response.ok || payload?.error) {
+                        throw new Error(payload?.error || 'Failed to load settings.');
+                    }
+                    populateForm(payload.settings);
+                    updateHint(payload);
+                    showStatus('', null);
+                } catch (error) {
+                    showStatus(error?.message || 'Failed to load settings.', 'error');
+                } finally {
+                    disableForm(false);
+                }
+            }
+
+            function populateForm(settings) {
+                Object.entries(fieldElements).forEach(([key, element]) => {
+                    const value = settings?.[key];
+                    if (element.type === 'checkbox') {
+                        element.checked = Boolean(value);
+                    } else if (value !== undefined && value !== null) {
+                        element.value = value;
+                    } else {
+                        element.value = '';
+                    }
+                });
+            }
+
+            function collectPayload() {
+                if (!modelSelect.value) {
+                    throw new Error('Select a model before saving.');
+                }
+
+                const payload = { model_name: modelSelect.value };
+                for (const key of integerFields) {
+                    const numericValue = Number(fieldElements[key].value);
+                    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+                        throw new Error(`Enter a positive number for ${formatLabel(key)}.`);
+                    }
+                    payload[key] = Math.floor(numericValue);
+                }
+
+                for (const key of floatFields) {
+                    const numericValue = Number.parseFloat(fieldElements[key].value);
+                    if (!Number.isFinite(numericValue)) {
+                        throw new Error(`Enter a number for ${formatLabel(key)}.`);
+                    }
+                    if (numericValue < 0 || numericValue > 2) {
+                        throw new Error(`${formatLabel(key)} must be between 0 and 2.`);
+                    }
+                    payload[key] = numericValue;
+                }
+
+                payload.verbose = Boolean(fieldElements.verbose.checked);
+                payload.use_mmap = Boolean(fieldElements.use_mmap.checked);
+                payload.logits_all = Boolean(fieldElements.logits_all.checked);
+                return payload;
+            }
+
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                if (isSaving) {
+                    return;
+                }
+
+                let payload;
+                try {
+                    payload = collectPayload();
+                } catch (validationError) {
+                    showStatus(validationError?.message || 'Invalid form values.', 'error');
+                    return;
+                }
+
+                isSaving = true;
+                disableForm(true);
+                saveButton.textContent = 'Saving...';
+
+                try {
+                    const response = await fetch('/api/model_settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    const data = await response.json();
+                    if (!response.ok || data?.error) {
+                        throw new Error(data?.error || 'Failed to save settings.');
+                    }
+                    populateForm(data.settings);
+                    updateHint(data);
+                    showStatus(data?.message || 'Settings saved.', 'success');
+                } catch (error) {
+                    showStatus(error?.message || 'Failed to save settings.', 'error');
+                } finally {
+                    isSaving = false;
+                    saveButton.textContent = defaultSaveLabel;
+                    disableForm(false);
+                }
+            });
+
+            modelSelect.addEventListener('change', (event) => {
+                currentModel = event.target.value;
+                loadSettings(currentModel);
+            });
+
+            function updateHint(payload) {
+                if (!payload) {
+                    reloadHint.textContent = '';
+                    reloadHint.classList.remove('warning');
+                    return;
+                }
+
+                if (payload.requires_reload) {
+                    reloadHint.textContent = 'This model is currently loaded. Save your changes, then click "Load Model" to reload with the new settings.';
+                    reloadHint.classList.add('warning');
+                } else {
+                    reloadHint.textContent = 'Settings will be applied the next time you load this model.';
+                    reloadHint.classList.remove('warning');
+                }
+            }
+
+            function disableForm(shouldDisable) {
+                modelSelect.disabled = shouldDisable || !availableModels.length;
+                Object.values(fieldElements).forEach((element) => {
+                    element.disabled = shouldDisable || !availableModels.length;
+                });
+                saveButton.disabled = shouldDisable || !availableModels.length;
+            }
+
+            function showStatus(message, variant) {
+                statusMessage.textContent = message || '';
+                statusMessage.classList.remove('error', 'success');
+                if (!message) {
+                    return;
+                }
+                if (variant === 'error') {
+                    statusMessage.classList.add('error');
+                } else if (variant === 'success') {
+                    statusMessage.classList.add('success');
+                }
+            }
+
+            function formatLabel(key) {
+                return key
+                    .split('_')
+                    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join(' ');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chunking Workspace</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body class="theme-light">
+    <div class="background-glow"></div>
+    <div class="chunking-page-shell page-shell page-surface">
+        <header class="chunking-header">
+            <div>
+                <p class="eyebrow">Repository tools</p>
+                <h1 id="chunking-panel-title">Chunking Workspace</h1>
+            </div>
+            <div class="chunking-header-actions">
+                <a class="button-secondary button-small" href="/">Back to Chat</a>
+                <button id="chunk-refresh-button" type="button" class="button-secondary">Refresh Database</button>
+            </div>
+        </header>
+
+        <section id="chunking-panel" aria-labelledby="chunking-panel-title">
+            <div class="chunking-layout">
+                <div class="chunking-card chunking-form-card">
+                    <div class="chunk-form-section">
+                        <label for="chunk-paths-input" class="chunk-label">Directories or files to chunk</label>
+                        <textarea
+                            id="chunk-paths-input"
+                            class="chunk-input"
+                            placeholder="Enter directories, files, or glob patterns. One entry per line."
+                        ></textarea>
+                    </div>
+                    <div class="chunk-form-section">
+                        <div class="chunk-label">Chunkers</div>
+                        <div id="chunker-checkboxes" class="chunker-checkboxes"></div>
+                    </div>
+                    <div class="chunking-actions">
+                        <button id="chunk-start-button" type="button" class="button-primary">Start Chunking</button>
+                        <span id="chunk-job-status-text" class="chunk-job-status" aria-live="polite"></span>
+                    </div>
+                    <div id="chunk-progress" class="chunk-progress" hidden>
+                        <div class="chunk-progress-top">
+                            <div class="chunk-progress-counts" id="chunk-progress-counts">0/0 files &middot; 0 chunks</div>
+                            <div class="chunk-progress-current" id="chunk-progress-current"></div>
+                        </div>
+                        <div class="chunk-progress-bar">
+                            <div id="chunk-progress-bar-fill"></div>
+                        </div>
+                        <div class="chunk-progress-logs">
+                            <h4>Recent updates</h4>
+                            <ul id="chunk-progress-log-list"></ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="chunking-card chunking-db-card">
+                    <div class="chunk-db-summary">
+                        <div class="chunk-summary-grid" role="group" aria-label="Chunk database summary">
+                            <div class="chunk-summary-block chunk-summary-block--counts">
+                                <div class="chunk-summary-stat">
+                                    <div class="chunk-metric-label">Total Files</div>
+                                    <div id="chunk-summary-files" class="chunk-metric-value">--</div>
+                                </div>
+                                <div class="chunk-summary-divider" aria-hidden="true"></div>
+                                <div class="chunk-summary-stat">
+                                    <div class="chunk-metric-label">Total Chunks</div>
+                                    <div id="chunk-summary-chunks" class="chunk-metric-value">--</div>
+                                </div>
+                            </div>
+                            <div class="chunk-summary-block chunk-summary-block--path">
+                                <div class="chunk-metric-label">Database Path</div>
+                                <div id="chunk-summary-path" class="chunk-metric-path" title="--">--</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chunk-files-controls">
+                        <input type="text" id="chunk-file-search" placeholder="Filter files" />
+                        <button id="chunk-file-search-button" type="button" class="button-secondary">Search</button>
+                    </div>
+                    <div class="chunk-files-table-wrapper">
+                        <table id="chunk-files-table">
+                            <thead>
+                                <tr>
+                                    <th>File</th>
+                                    <th>Chunker</th>
+                                    <th>Chunks</th>
+                                    <th>Lines</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div id="chunk-chunks-panel" class="chunk-preview-card">
+                        <div class="chunk-chunks-header">
+                            <h3 id="chunk-chunks-title">Chunk Preview</h3>
+                            <button id="chunk-clear-selection" type="button" class="button-secondary button-small">Clear</button>
+                        </div>
+                        <div id="chunk-chunks-list" class="chunk-chunks-list">
+                            <p class="placeholder">Select a file to view its chunks.</p>
+                        </div>
+                        <div id="chunk-chunk-detail" class="chunk-chunk-detail" hidden>
+                            <div class="chunk-detail-header">
+                                <div id="chunk-detail-symbol" class="chunk-detail-symbol"></div>
+                                <button id="chunk-detail-close" type="button" aria-label="Close chunk preview">&times;</button>
+                            </div>
+                            <pre id="chunk-detail-text"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const chunkPathsInput = document.getElementById('chunk-paths-input');
+            const chunkStartButton = document.getElementById('chunk-start-button');
+            const chunkRefreshButton = document.getElementById('chunk-refresh-button');
+            const chunkerCheckboxes = document.getElementById('chunker-checkboxes');
+            const chunkProgressContainer = document.getElementById('chunk-progress');
+            const chunkProgressCounts = document.getElementById('chunk-progress-counts');
+            const chunkProgressCurrent = document.getElementById('chunk-progress-current');
+            const chunkProgressBarFill = document.getElementById('chunk-progress-bar-fill');
+            const chunkProgressLogs = document.getElementById('chunk-progress-log-list');
+            const chunkJobStatusText = document.getElementById('chunk-job-status-text');
+            const chunkSummaryFiles = document.getElementById('chunk-summary-files');
+            const chunkSummaryChunks = document.getElementById('chunk-summary-chunks');
+            const chunkSummaryPath = document.getElementById('chunk-summary-path');
+            const chunkFilesTableBody = document.querySelector('#chunk-files-table tbody');
+            const chunkFileSearchInput = document.getElementById('chunk-file-search');
+            const chunkFileSearchButton = document.getElementById('chunk-file-search-button');
+            const chunkChunksList = document.getElementById('chunk-chunks-list');
+            const chunkChunksTitle = document.getElementById('chunk-chunks-title');
+            const chunkClearSelection = document.getElementById('chunk-clear-selection');
+            const chunkChunkDetail = document.getElementById('chunk-chunk-detail');
+            const chunkDetailSymbol = document.getElementById('chunk-detail-symbol');
+            const chunkDetailText = document.getElementById('chunk-detail-text');
+            const chunkDetailClose = document.getElementById('chunk-detail-close');
+
+            const chunkingState = {
+                chunkers: [],
+                activeJobId: null,
+                jobPollTimer: null,
+                selectedFileLabel: null,
+                lastSearchTerm: '',
+            };
+
+            function setChunkJobStatus(message, isError = false) {
+                if (!chunkJobStatusText) {
+                    return;
+                }
+                chunkJobStatusText.textContent = message || '';
+                chunkJobStatusText.classList.toggle('error', Boolean(isError));
+            }
+
+            function formatChunkLabel(label) {
+                if (!label) {
+                    return '';
+                }
+                if (label.includes('::')) {
+                    const [root, rel] = label.split('::', 2);
+                    return `${rel} (root: ${root})`;
+                }
+                return label;
+            }
+
+            function renderChunkerCheckboxes(chunkers) {
+                if (!chunkerCheckboxes) {
+                    return;
+                }
+                chunkerCheckboxes.innerHTML = '';
+                if (!chunkers.length) {
+                    const emptyState = document.createElement('p');
+                    emptyState.className = 'placeholder';
+                    emptyState.textContent = 'No chunkers are registered.';
+                    chunkerCheckboxes.appendChild(emptyState);
+                    return;
+                }
+                chunkers.forEach(chunker => {
+                    const label = document.createElement('label');
+                    const input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.value = chunker.name;
+                    input.checked = true;
+                    label.appendChild(input);
+                    const span = document.createElement('span');
+                    span.textContent = `${chunker.name} — ${chunker.description || ''}`.trim();
+                    label.appendChild(span);
+                    chunkerCheckboxes.appendChild(label);
+                });
+            }
+
+            function getSelectedChunkers() {
+                if (!chunkerCheckboxes) {
+                    return [];
+                }
+                return Array.from(chunkerCheckboxes.querySelectorAll('input[type="checkbox"]:checked')).map(input => input.value);
+            }
+
+            function parseChunkPathInput() {
+                if (!chunkPathsInput) {
+                    return [];
+                }
+                return chunkPathsInput.value
+                    .split(/\r?\n/)
+                    .map(entry => entry.trim())
+                    .filter(entry => entry.length > 0);
+            }
+
+            async function fetchChunkers() {
+                try {
+                    const response = await fetch('/api/chunking/chunkers');
+                    if (!response.ok) {
+                        throw new Error('Failed to load chunkers.');
+                    }
+                    const payload = await response.json();
+                    chunkingState.chunkers = payload.chunkers || [];
+                    renderChunkerCheckboxes(chunkingState.chunkers);
+                } catch (error) {
+                    console.warn(error);
+                    setChunkJobStatus('Unable to load chunkers.', true);
+                }
+            }
+
+            function renderChunkLogs(logs) {
+                if (!chunkProgressLogs) {
+                    return;
+                }
+                chunkProgressLogs.innerHTML = '';
+                (logs || []).slice(-8).forEach(entry => {
+                    const li = document.createElement('li');
+                    const timestamp = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : '';
+                    const message = entry.message || '';
+                    li.textContent = timestamp ? `${timestamp} — ${message}` : message;
+                    chunkProgressLogs.appendChild(li);
+                });
+            }
+
+            function updateChunkProgress(job) {
+                if (!chunkProgressContainer || !chunkProgressCounts || !chunkProgressBarFill) {
+                    return;
+                }
+                chunkProgressContainer.hidden = false;
+                const totalFiles = Number(job.total_files ?? 0);
+                const processed = Number(job.processed_files ?? 0);
+                const chunkCount = Number(job.chunk_count ?? 0);
+                const percent = totalFiles > 0 ? Math.round((processed / totalFiles) * 100) : 0;
+                chunkProgressCounts.textContent = `${processed}/${totalFiles} files · ${chunkCount} chunks`;
+                chunkProgressCurrent.textContent = job.last_path ? formatChunkLabel(job.last_path) : '';
+                chunkProgressBarFill.style.width = `${percent}%`;
+                setChunkJobStatus(`Status: ${job.status || 'pending'}`, job.status === 'failed');
+                renderChunkLogs(job.logs || []);
+            }
+
+            async function fetchJobSnapshot(jobId) {
+                try {
+                    const response = await fetch(`/api/chunking/jobs/${encodeURIComponent(jobId)}`);
+                    if (!response.ok) {
+                        return null;
+                    }
+                    const payload = await response.json();
+                    return payload.job || null;
+                } catch (error) {
+                    console.warn('Failed to fetch chunk job', error);
+                    return null;
+                }
+            }
+
+            function stopJobPolling() {
+                if (chunkingState.jobPollTimer) {
+                    window.clearTimeout(chunkingState.jobPollTimer);
+                    chunkingState.jobPollTimer = null;
+                }
+            }
+
+            function startJobPolling(jobId, immediate = false) {
+                stopJobPolling();
+                if (!jobId) {
+                    return;
+                }
+                const poll = async () => {
+                    const snapshot = await fetchJobSnapshot(jobId);
+                    if (!snapshot) {
+                        stopJobPolling();
+                        return;
+                    }
+                    updateChunkProgress(snapshot);
+                    if (['completed', 'failed', 'cancelled'].includes(snapshot.status)) {
+                        chunkingState.activeJobId = null;
+                        stopJobPolling();
+                        await refreshChunkSummary();
+                        await refreshChunkFiles(chunkingState.lastSearchTerm);
+                    } else {
+                        chunkingState.jobPollTimer = window.setTimeout(poll, 2000);
+                    }
+                };
+                if (immediate) {
+                    poll();
+                } else {
+                    chunkingState.jobPollTimer = window.setTimeout(poll, 300);
+                }
+                chunkingState.activeJobId = jobId;
+            }
+
+            async function hydrateActiveChunkJob() {
+                try {
+                    const response = await fetch('/api/chunking/jobs');
+                    if (!response.ok) {
+                        return;
+                    }
+                    const payload = await response.json();
+                    const job = (payload.jobs || []).find(entry => entry.status === 'running' || entry.status === 'pending');
+                    if (job) {
+                        updateChunkProgress(job);
+                        startJobPolling(job.job_id, true);
+                    }
+                } catch (error) {
+                    console.warn('Unable to hydrate chunking jobs', error);
+                }
+            }
+
+            async function startChunkingJob() {
+                const paths = parseChunkPathInput();
+                if (!paths.length) {
+                    setChunkJobStatus('Enter at least one directory or file to chunk.', true);
+                    return;
+                }
+                const includeChunkers = getSelectedChunkers();
+                const payload = { paths };
+                if (includeChunkers.length && includeChunkers.length !== chunkingState.chunkers.length) {
+                    payload.include = includeChunkers;
+                }
+                if (chunkStartButton) {
+                    chunkStartButton.disabled = true;
+                }
+                setChunkJobStatus('Starting chunk job...');
+                try {
+                    const response = await fetch('/api/chunking/jobs', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    if (!response.ok) {
+                        const errorPayload = await response.json().catch(() => ({}));
+                        throw new Error(errorPayload.error || 'Chunking request failed.');
+                    }
+                    const body = await response.json();
+                    if (body.job) {
+                        updateChunkProgress(body.job);
+                        startJobPolling(body.job.job_id, true);
+                    }
+                } catch (error) {
+                    setChunkJobStatus(error.message, true);
+                } finally {
+                    if (chunkStartButton) {
+                        chunkStartButton.disabled = false;
+                    }
+                }
+            }
+
+            async function refreshChunkSummary() {
+                if (!chunkSummaryFiles) {
+                    return;
+                }
+                try {
+                    const response = await fetch('/api/chunking/database/summary');
+                    if (!response.ok) {
+                        throw new Error('Failed to load summary.');
+                    }
+                    const summary = await response.json();
+                    chunkSummaryFiles.textContent = Number(summary.total_files ?? 0).toLocaleString();
+                    chunkSummaryChunks.textContent = Number(summary.total_chunks ?? 0).toLocaleString();
+                    const databasePath = summary.database || '--';
+                    chunkSummaryPath.textContent = databasePath;
+                    chunkSummaryPath.title = databasePath;
+                } catch (error) {
+                    console.warn(error);
+                    chunkSummaryFiles.textContent = '--';
+                    chunkSummaryChunks.textContent = '--';
+                    chunkSummaryPath.textContent = '--';
+                    chunkSummaryPath.title = 'Database path not available';
+                }
+            }
+
+            async function refreshChunkFiles(searchTerm = '') {
+                if (!chunkFilesTableBody) {
+                    return;
+                }
+                chunkingState.lastSearchTerm = searchTerm;
+                try {
+                    const params = new URLSearchParams();
+                    if (searchTerm) {
+                        params.set('search', searchTerm);
+                    }
+                    params.set('limit', '50');
+                    const response = await fetch(`/api/chunking/database/files?${params.toString()}`);
+                    if (!response.ok) {
+                        throw new Error('Failed to load files.');
+                    }
+                    const payload = await response.json();
+                    renderChunkFileRows(payload.items || []);
+                } catch (error) {
+                    console.warn(error);
+                    renderChunkFileRows([]);
+                }
+            }
+
+            function renderChunkFileRows(records) {
+                if (!chunkFilesTableBody) {
+                    return;
+                }
+                chunkFilesTableBody.innerHTML = '';
+                if (!records.length) {
+                    const row = document.createElement('tr');
+                    const cell = document.createElement('td');
+                    cell.colSpan = 4;
+                    cell.textContent = 'No chunked files yet.';
+                    row.appendChild(cell);
+                    chunkFilesTableBody.appendChild(row);
+                    return;
+                }
+                records.forEach(record => {
+                    const row = document.createElement('tr');
+                    row.dataset.fileLabel = record.file_path;
+                    const fileCell = document.createElement('td');
+                    fileCell.textContent = formatChunkLabel(record.file_path);
+                    const chunkerCell = document.createElement('td');
+                    chunkerCell.textContent = record.chunker || '--';
+                    const countCell = document.createElement('td');
+                    countCell.textContent = Number(record.chunk_count ?? 0).toLocaleString();
+                    const linesCell = document.createElement('td');
+                    const start = record.first_line ?? '--';
+                    const end = record.last_line ?? '--';
+                    linesCell.textContent = `${start} – ${end}`;
+                    row.append(fileCell, chunkerCell, countCell, linesCell);
+                    chunkFilesTableBody.appendChild(row);
+                });
+            }
+
+            async function loadChunksForFile(fileLabel) {
+                if (!fileLabel) {
+                    return;
+                }
+                chunkingState.selectedFileLabel = fileLabel;
+                clearChunkDetail();
+                if (chunkChunksTitle) {
+                    chunkChunksTitle.textContent = `Chunk Preview — ${formatChunkLabel(fileLabel)}`;
+                }
+                try {
+                    const params = new URLSearchParams({ file_path: fileLabel, limit: '5' });
+                    const response = await fetch(`/api/chunking/database/chunks?${params.toString()}`);
+                    if (!response.ok) {
+                        throw new Error('Failed to load chunks.');
+                    }
+                    const payload = await response.json();
+                    renderChunkList(payload.items || []);
+                } catch (error) {
+                    console.warn(error);
+                    if (chunkChunksList) {
+                        chunkChunksList.innerHTML = '<p class="placeholder">Unable to load chunks for this file.</p>';
+                    }
+                }
+            }
+
+            function renderChunkList(chunks) {
+                if (!chunkChunksList) {
+                    return;
+                }
+                chunkChunksList.innerHTML = '';
+                if (!chunks.length) {
+                    chunkChunksList.innerHTML = '<p class="placeholder">No chunks stored for this file yet.</p>';
+                    return;
+                }
+                chunks.forEach(chunk => {
+                    const row = document.createElement('div');
+                    row.className = 'chunk-chunk-row';
+                    const heading = document.createElement('strong');
+                    heading.textContent = `${chunk.symbol || 'chunk'} (${chunk.start_line ?? '--'}–${chunk.end_line ?? '--'})`;
+                    const snippet = document.createElement('p');
+                    const cleaned = (chunk.text || '').replace(/\s+/g, ' ').trim();
+                    snippet.textContent = cleaned.length > 160 ? `${cleaned.slice(0, 160)}…` : cleaned;
+                    const actionBar = document.createElement('div');
+                    actionBar.className = 'chunk-chunk-actions';
+                    const span = document.createElement('span');
+                    span.textContent = `ID ${chunk.id}`;
+                    const viewButton = document.createElement('button');
+                    viewButton.type = 'button';
+                    viewButton.textContent = 'View chunk';
+                    viewButton.addEventListener('click', () => showChunkDetail(chunk.id));
+                    actionBar.append(span, viewButton);
+                    row.append(heading, snippet, actionBar);
+                    chunkChunksList.appendChild(row);
+                });
+            }
+
+            async function showChunkDetail(chunkId) {
+                if (!chunkChunkDetail || !chunkDetailSymbol || !chunkDetailText) {
+                    return;
+                }
+                try {
+                    const response = await fetch(`/api/chunking/database/chunks/${encodeURIComponent(chunkId)}`);
+                    if (!response.ok) {
+                        throw new Error('Chunk not found.');
+                    }
+                    const chunk = await response.json();
+                    chunkDetailSymbol.textContent = `${chunk.symbol || ''} (${chunk.start_line ?? '--'}–${chunk.end_line ?? '--'})`;
+                    chunkDetailText.textContent = chunk.text || '';
+                    chunkChunkDetail.hidden = false;
+                } catch (error) {
+                    console.warn(error);
+                }
+            }
+
+            function clearChunkDetail() {
+                if (!chunkChunkDetail || !chunkDetailSymbol || !chunkDetailText) {
+                    return;
+                }
+                chunkChunkDetail.hidden = true;
+                chunkDetailSymbol.textContent = '';
+                chunkDetailText.textContent = '';
+            }
+
+            function setupChunkEventHandlers() {
+                if (chunkStartButton) {
+                    chunkStartButton.addEventListener('click', startChunkingJob);
+                }
+                if (chunkRefreshButton) {
+                    chunkRefreshButton.addEventListener('click', () => {
+                        refreshChunkSummary();
+                        const term = chunkFileSearchInput ? chunkFileSearchInput.value.trim() : '';
+                        refreshChunkFiles(term);
+                    });
+                }
+                if (chunkFileSearchButton && chunkFileSearchInput) {
+                    chunkFileSearchButton.addEventListener('click', () => {
+                        refreshChunkFiles(chunkFileSearchInput.value.trim());
+                    });
+                    chunkFileSearchInput.addEventListener('keydown', event => {
+                        if (event.key === 'Enter') {
+                            event.preventDefault();
+                            refreshChunkFiles(chunkFileSearchInput.value.trim());
+                        }
+                    });
+                }
+                if (chunkFilesTableBody) {
+                    chunkFilesTableBody.addEventListener('click', event => {
+                        const row = event.target.closest('tr[data-file-label]');
+                        if (!row) {
+                            return;
+                        }
+                        loadChunksForFile(row.dataset.fileLabel);
+                    });
+                }
+                if (chunkClearSelection) {
+                    chunkClearSelection.addEventListener('click', () => {
+                        chunkingState.selectedFileLabel = null;
+                        if (chunkChunksTitle) {
+                            chunkChunksTitle.textContent = 'Chunk Preview';
+                        }
+                        if (chunkChunksList) {
+                            chunkChunksList.innerHTML = '<p class="placeholder">Select a file to view its chunks.</p>';
+                        }
+                        clearChunkDetail();
+                    });
+                }
+                if (chunkDetailClose) {
+                    chunkDetailClose.addEventListener('click', clearChunkDetail);
+                }
+            }
+
+            async function initChunkingWorkspace() {
+                if (!chunkPathsInput) {
+                    return;
+                }
+                setupChunkEventHandlers();
+                await fetchChunkers();
+                await refreshChunkSummary();
+                await refreshChunkFiles();
+                await hydrateActiveChunkJob();
+            }
+
+            try {
+                await initChunkingWorkspace();
+            } catch (error) {
+                console.warn('Failed to initialize chunking workspace', error);
+            }
+        });
+    </script>
+</body>
+</html>
